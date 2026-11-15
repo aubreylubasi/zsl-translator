@@ -1,0 +1,67 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Bundle the offline web app (MediaPipe engines + models)
+        run: bash app/prepare.sh
+
+      - name: Build the APK
+        working-directory: app/android
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: cp app/android/app/build/outputs/apk/debug/app-debug.apk ZSL-Translator.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZSL-Translator-apk
+          path: ZSL-Translator.apk
+
+      - name: Publish as the latest test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-apk --yes --cleanup-tag || true
+          gh release create latest-apk ZSL-Translator.apk \
+            --prerelease \
+            --title "ZSL Translator: latest test build" \
+            --notes "Offline Android test build from ${GITHUB_SHA::7}. Install it by opening the APK on your phone and allowing installs from this source. If an older test build is installed, uninstall it first."
+
+      - name: Also keep a copy on the apk branch
+        run: |
+          mkdir -p /tmp/out && cp ZSL-Translator.apk /tmp/out/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan apk
+          git rm -rfq .
+          cp /tmp/out/ZSL-Translator.apk .
+          printf "# ZSL Translator APK\n\nTest build from %s.\n" "${GITHUB_SHA::7}" > README.md
+          git add ZSL-Translator.apk README.md
+          git commit -qm "APK built from ${GITHUB_SHA::7}"
+          git push -f origin apk

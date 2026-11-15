@@ -113,8 +113,8 @@ def main():
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     tracker = Tracker(backend=args.backend)
     if bundle.get("backend") not in (None, "unknown", tracker.backend):
-        print("WARNING: this model was trained with a different MediaPipe version. "
-              "Run video_to_dataset.py and train.py again on this computer.")
+        print("Note: this model was trained with a different MediaPipe version. If results are "
+              "poor, run video_to_dataset.py and train.py again on this computer.")
     typist = Typist(labels, args.min_conf, args.hold)
     t0, last_t, n = time.time(), None, 0
 

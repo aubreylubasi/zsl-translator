@@ -5,3 +5,13 @@ videos/*.mp4
 data/*.npz
 data/*_preview.jpg
 .DS_Store
+
+# phone app build files
+app/node_modules/
+app/package-lock.json
+app/www/mediapipe/
+app/android/.gradle/
+app/android/build/
+app/android/app/build/
+app/android/app/src/main/assets/
+app/android/local.properties

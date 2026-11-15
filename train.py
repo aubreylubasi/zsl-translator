@@ -39,8 +39,8 @@ def load(data_dir):
     if not X:
         sys.exit("No data yet. Run video_to_dataset.py or collect.py first.")
     if len(backends) > 1:
-        print(f"WARNING: data was made with different MediaPipe versions ({', '.join(sorted(backends))}). "
-              "Left/right hands may not match - re-make old files on this computer.")
+        print(f"Note: data was made with different MediaPipe versions ({', '.join(sorted(backends))}). "
+              "That's fine, but tracking can differ slightly between them.")
     load.backends = backends
     return np.concatenate(X), np.concatenate(y), np.concatenate(src), np.concatenate(pos)
 
@@ -62,6 +62,24 @@ def augment(X, y, use_mirror=True, copies=2, seed=0):
 def make_model():
     return make_pipeline(StandardScaler(), MLPClassifier(
         hidden_layer_sizes=(256, 128), alpha=1e-3, max_iter=300, random_state=0))
+
+
+def export_json(model, labels, path):
+    """Save the model as plain numbers for the phone app (app/www)."""
+    import json
+    scaler, mlp = model.steps[0][1], model.steps[1][1]
+    r = lambda a: [float(f"{v:.6g}") for v in np.asarray(a).ravel()]
+    data = {
+        "labels": [str(s) for s in labels],
+        "feature_dim": FEATURE_DIM,
+        "mean": r(scaler.mean_), "scale": r(scaler.scale_),
+        "activation": mlp.activation,
+        "layers": [{"in": int(W.shape[0]), "out": int(W.shape[1]), "W": r(W), "b": r(b)}
+                   for W, b in zip(mlp.coefs_, mlp.intercepts_)],
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, separators=(",", ":"))
 
 
 def report(model, Xt, yt, title):
@@ -110,6 +128,10 @@ def main():
     joblib.dump({"model": model, "labels": list(model.classes_), "feature_dim": FEATURE_DIM,
                  "sources": sorted(set(src)), "backend": sorted(load.backends)[0]}, args.out)
     print(f"Saved -> {os.path.relpath(args.out, ROOT)}   Now run: python live.py")
+    web = os.path.join(ROOT, "app", "www", "zsl_model.json")
+    if os.path.isdir(os.path.join(ROOT, "app", "www")):
+        export_json(model, model.classes_, web)
+        print(f"Phone app model -> {os.path.relpath(web, ROOT)}")
 
 
 if __name__ == "__main__":
