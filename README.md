@@ -32,16 +32,35 @@ of the hands and shoulders as numbers, with no faces and no pictures.
 | Played back on that video | Typed **A to Z** in order, with no mistakes |
 | Flipped and lowered to 480p (like a left-handed signer on a worse camera) | All 26 letters in order, plus one stray letter in the intro |
 | Held-back frames, same signer | 77% of single frames correct before smoothing |
+| Phone app in Chrome, camera shown L, O, V, E | Typed **LOVE** |
+| Phone app maths compared with the Python version (92 frames) | Same answer on every frame |
 
 All of these use one signer. The next milestone is testing on people the model
 has never seen (see step 5 below).
+
+## Phone app (Android, works offline)
+
+Download **ZSL-Translator.apk** from the
+[latest test release](../../releases/tag/latest-apk). Open it on your phone and
+allow installs from that source. Point the back camera at the signer, or press
+**Flip** to sign to the front camera yourself. If an older test build is
+installed, uninstall it first.
+
+- `app/www/`: the app itself (HTML and JavaScript). It uses MediaPipe's hand and
+  body tracking and the same model as the desktop version (`zsl_model.json`).
+- `app/android/`: a small Android wrapper that serves the app from inside the
+  APK and blocks all internet access, so nothing leaves the phone.
+- `.github/workflows/android.yml`: GitHub builds a new APK on every push.
+
+To update the phone's model, run `python train.py` (it rewrites
+`app/www/zsl_model.json`), then commit and push.
 
 ## Roadmap
 
 - [x] Alphabet from video, live webcam recognition, speech output
 - [ ] Record Deaf signers with consent (with ZNAD, schools for the Deaf, Signs of Love)
 - [ ] Words with movement (sequence model over frames)
-- [ ] Offline Android app (MediaPipe runs on the phone)
+- [x] Offline Android app (MediaPipe runs on the phone)
 - [ ] Other direction: speech to sign
 
 ---
@@ -138,6 +157,7 @@ This scores the model on a person it has never seen.
 | `live.py` | Live camera to text and speech |
 | `zsl/tracker.py` | MediaPipe hand and body tracking (works with old and new MediaPipe) |
 | `zsl/features.py` | Turns hand points into numbers the model learns from |
+| `app/` | The offline Android app (see above) |
 
 ## Limits of this version
 
@@ -149,8 +169,9 @@ This scores the model on a person it has never seen.
 ## Credits
 
 The ZSL alphabet video used for the first experiments is by
-[Signs of Love](https://www.signsoflove.org). It is not included in this
-repository, and neither is any data made from it.
+[Signs of Love](https://www.signsoflove.org). The video and the hand data taken
+from it are not in this repository. The demo model (`app/www/zsl_model.json`)
+was trained on it for non-commercial testing only.
 
 Inspired by the Sign Champions' BSL translator (Longitude Explorer Prize 2021),
 rebuilt for Zambia.

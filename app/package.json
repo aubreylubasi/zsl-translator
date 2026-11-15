@@ -1,0 +1,9 @@
+{
+  "name": "zsl-translator-app",
+  "private": true,
+  "description": "Offline phone app for ZSL Translator. MediaPipe's web engines and models are bundled from npm.",
+  "dependencies": {
+    "@mediapipe/hands": "0.4.1675469240",
+    "@mediapipe/pose": "0.5.1675469404"
+  }
+}
