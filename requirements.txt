@@ -1,0 +1,5 @@
+mediapipe
+scikit-learn
+joblib
+numpy
+certifi
