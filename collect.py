@@ -1,6 +1,11 @@
 """Record signs from the webcam. Saves ONLY hand/body numbers - never video.
 
     python collect.py --labels A-Z --signer P01
+    python collect.py --labels _ --signer P01 --samples 10    # "not a sign" takes
+
+"_" means NOT A SIGN: during those takes, sign words, move between letters,
+talk with your hands, scratch your face, rest your hands. This teaches the
+model what to ignore. Each "_" take lasts twice as long.
 
 Only record people who have agreed to take part. Use a code like P01, P02
 instead of real names.
@@ -14,7 +19,7 @@ import time
 import cv2
 import numpy as np
 
-from zsl.features import FEATURE_DIM, frame_features, parse_labels
+from zsl.features import FEATURE_DIM, NOT_A_SIGN, frame_features, parse_labels
 from zsl.tracker import Tracker, draw
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -56,17 +61,18 @@ def main():
         lm = tracker.process(frame, (now - t0) * 1000)
         f = frame_features(lm)
         lab = labels[idx]
+        seconds = args.seconds * (2 if lab == NOT_A_SIGN else 1)
 
         if state == "countdown" and now - t_state >= 1.0:
             state, t_state, take_frames = "recording", now, []
         if state == "recording":
             if f is not None:
                 take_frames.append((now - t_state, f))
-            if now - t_state >= args.seconds:
+            if now - t_state >= seconds:
                 state = "idle"
                 if len(take_frames) >= 5:
                     for t, feat in take_frames:
-                        X.append(feat); y.append(lab); seg.append(take); pos.append(t / args.seconds)
+                        X.append(feat); y.append(lab); seg.append(take); pos.append(t / seconds)
                     take += 1
                     done[lab] += 1
                     if done[lab] >= args.samples:
@@ -77,7 +83,9 @@ def main():
         view = cv2.flip(draw(frame.copy(), lm), 1)  # mirror view, like a selfie
         h, w = view.shape[:2]
         if idx < len(labels):
-            put(view, f"Sign: {labels[idx]}   take {done[labels[idx]] + 1}/{args.samples}", (20, 45), 1.1, (0, 255, 255), 3)
+            cur = labels[idx]
+            shown = "NOT A SIGN (move, sign words, rest)" if cur == NOT_A_SIGN else cur
+            put(view, f"Sign: {shown}   take {done[cur] + 1}/{args.samples}", (20, 45), 1.1, (0, 255, 255), 3)
         put(view, f"Signer {args.signer} | {sum(done.values())} takes saved", (20, 85), 0.7)
         put(view, "SPACE record   N next   B back   Q save+quit", (20, h - 20), 0.7)
         if f is None:

@@ -9,6 +9,17 @@ MANUAL - any other video: write a CSV of  label,start,end  (seconds or m:ss)
 
     python video_to_dataset.py greetings.mp4 --segments greetings.csv
 
+ONE SIGN PER VIDEO - every video shows just one sign:
+
+    python video_to_dataset.py videos/hello_*.mp4 --label HELLO
+
+NOT A SIGN - teach it what to ignore. Use videos of word signs, natural
+signing (a news interpreter), people talking with their hands, hands resting:
+
+    python video_to_dataset.py videos/znbc_news.mp4 --none
+
+In a CSV, "_" also means "not a sign" (for example the intro of a video).
+
 Output: data/<name>.npz (numbers only, no pictures) and data/<name>_segments.csv
 (where each sign was found - fix it by hand and re-run with --segments if needed).
 """
@@ -20,7 +31,7 @@ import sys
 import cv2
 import numpy as np
 
-from zsl.features import FEATURE_DIM, frame_features, parse_labels
+from zsl.features import FEATURE_DIM, NOT_A_SIGN, frame_features, parse_labels
 from zsl.tracker import Tracker, draw
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -115,9 +126,12 @@ def save_preview(video, segs, lms, path, width=320):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("video")
+    ap.add_argument("videos", nargs="+", metavar="video", help="one or more video files")
     ap.add_argument("--labels", help="signs in the order they appear: A-Z, 'HELLO,THANK YOU' or a .txt file")
     ap.add_argument("--segments", help="CSV with label,start,end instead of auto-detection")
+    ap.add_argument("--label", help="the whole video is this one sign")
+    ap.add_argument("--none", action="store_true",
+                    help="the whole video is NOT a sign (word signs, chatting, resting hands)")
     ap.add_argument("--label-box", default="0.58,0.10,0.84,0.56",
                     help="where the on-screen label sits, x0,y0,x1,y1 as fractions (default fits Signs of Love videos)")
     ap.add_argument("--card-color", default="yellow", choices=["yellow", "any"],
@@ -125,22 +139,31 @@ def main():
     ap.add_argument("--trim", type=float, default=0.2,
                     help="ignore this fraction at the start and end of each sign (hand moving in/out)")
     ap.add_argument("--width", type=int, default=960, help="shrink frames to this width before tracking")
-    ap.add_argument("--name", help="output name (default: video file name)")
+    ap.add_argument("--name", help="output name (default: video file name; only for one video)")
     ap.add_argument("--preview", action="store_true", help="save a picture of each detected sign to check the labels")
     ap.add_argument("--backend", default="auto", choices=["auto", "tasks", "legacy"])
     args = ap.parse_args()
-    if not args.labels and not args.segments:
-        ap.error("give --labels (auto mode) or --segments (CSV)")
+    if args.none:
+        args.label, args.trim = NOT_A_SIGN, 0.0
+    if sum(bool(v) for v in (args.labels, args.segments, args.label)) != 1:
+        ap.error("give one of --labels (auto mode), --segments (CSV), --label or --none")
+    if args.name and len(args.videos) > 1:
+        ap.error("--name only works with one video")
+    for video in args.videos:
+        process(video, args)
 
-    cap = cv2.VideoCapture(args.video)
+
+def process(video, args):
+    cap = cv2.VideoCapture(video)
     if not cap.isOpened():
-        sys.exit(f"Can't open {args.video}")
+        sys.exit(f"Can't open {video}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
     x0, y0, x1, y1 = (float(v) for v in args.label_box.split(","))
-    name = args.name or os.path.splitext(os.path.basename(args.video))[0]
+    name = args.name or os.path.splitext(os.path.basename(video))[0]
+    find_card = bool(args.labels)
 
-    print(f"Reading {os.path.basename(args.video)}: {total} frames at {fps:.0f} fps "
+    print(f"Reading {os.path.basename(video)}: {total} frames at {fps:.0f} fps "
           f"(tracking with MediaPipe)...")
     tracker = Tracker(backend=args.backend)
     feats, lms, thumbs, card = [], [], [], []
@@ -150,15 +173,16 @@ def main():
         if not ok:
             break
         h, w = fr.shape[:2]
-        roi = fr[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)]
-        thumbs.append(cv2.resize(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), (32, 32),
-                                 interpolation=cv2.INTER_AREA).astype(np.float32))
-        if args.card_color == "yellow":
-            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-            yellow = ((hsv[..., 0] >= 18) & (hsv[..., 0] <= 35) & (hsv[..., 1] >= 120) & (hsv[..., 2] >= 150))
-            card.append(yellow.mean() > 0.25)
-        else:
-            card.append(True)
+        if find_card:  # watch the on-screen label
+            roi = fr[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)]
+            thumbs.append(cv2.resize(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), (32, 32),
+                                     interpolation=cv2.INTER_AREA).astype(np.float32))
+            if args.card_color == "yellow":
+                hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                yellow = ((hsv[..., 0] >= 18) & (hsv[..., 0] <= 35) & (hsv[..., 1] >= 120) & (hsv[..., 2] >= 150))
+                card.append(yellow.mean() > 0.25)
+            else:
+                card.append(True)
         small = cv2.resize(fr, (args.width, int(h * args.width / w))) if w > args.width else fr
         lm = tracker.process(small, i * 1000.0 / fps)
         lms.append(lm if lm.hands else None)
@@ -170,7 +194,9 @@ def main():
     tracker.close()
     backend = tracker.backend
 
-    if args.segments:
+    if args.label:
+        segs = [(args.label, 0, len(feats) - 1)]
+    elif args.segments:
         segs = read_segments_csv(args.segments, fps)
     else:
         labels = parse_labels(args.labels)
@@ -197,7 +223,8 @@ def main():
                 X.append(feats[j]); y.append(lab); seg_id.append(k); pos.append((j - s) / length)
                 used += 1
         flag = "" if used >= 10 else "   <- few hand frames, check this one"
-        print(f"{lab:6} {s / fps:5.1f}-{(e + 1) / fps:5.1f}s   {used:4d}{flag}")
+        shown = "(not a sign)" if lab == NOT_A_SIGN else lab
+        print(f"{shown:6} {s / fps:5.1f}-{(e + 1) / fps:5.1f}s   {used:4d}{flag}")
 
     out = os.path.join(ROOT, "data", f"{name}.npz")
     np.savez_compressed(out, X=np.array(X, dtype=np.float32).reshape(-1, FEATURE_DIM),
@@ -207,7 +234,7 @@ def main():
     print(f"Sign times -> {os.path.relpath(seg_csv, ROOT)}")
     if args.preview:
         prev = os.path.join(ROOT, "data", f"{name}_preview.jpg")
-        save_preview(args.video, segs, lms, prev)
+        save_preview(video, segs, lms, prev)
         print(f"Check picture -> {os.path.relpath(prev, ROOT)}  (is every label on the right sign?)")
 
 

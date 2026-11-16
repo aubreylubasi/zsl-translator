@@ -18,6 +18,7 @@ import re
 
 import numpy as np
 
+NOT_A_SIGN = "_"  # label for "the hands are doing something that isn't a known sign"
 N_SLOTS = 2
 HAND_DIM = 21 * 3 + 2 + 1 + 1
 FEATURE_DIM = HAND_DIM * N_SLOTS
@@ -60,13 +61,17 @@ def mirror(X):
 
 
 def parse_labels(text):
-    """'A-Z' -> ['A'..'Z'];  'HELLO,THANK YOU' -> ['HELLO','THANK YOU'];  path to a .txt -> one per line."""
+    """'A-Z' -> ['A'..'Z'];  'A-Z,_' -> ['A'..'Z','_'];  'HELLO,THANK YOU' -> ['HELLO','THANK YOU'];
+    path to a .txt -> one per line.  '_' means "not a sign"."""
     import os
     if os.path.isfile(text):
         with open(text, encoding="utf-8") as f:
             return [ln.strip() for ln in f if ln.strip()]
-    m = re.fullmatch(r"\s*([A-Za-z0-9])\s*-\s*([A-Za-z0-9])\s*", text)
-    if m:
-        lo, hi = m.group(1), m.group(2)
-        return [chr(c) for c in range(ord(lo), ord(hi) + 1)]
-    return [t.strip() for t in text.split(",") if t.strip()]
+    out = []
+    for part in (t.strip() for t in text.split(",")):
+        m = re.fullmatch(r"([A-Za-z0-9])\s*-\s*([A-Za-z0-9])", part)
+        if m:
+            out += [chr(c) for c in range(ord(m.group(1)), ord(m.group(2)) + 1)]
+        elif part:
+            out.append(part)
+    return out

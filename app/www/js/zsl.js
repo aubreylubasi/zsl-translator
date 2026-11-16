@@ -1,8 +1,10 @@
-/* ZSL Translator core: features, model and typing logic.
- * Must match zsl/features.py and live.py exactly; the phone and the
+/* ZSL Translator core: features, model, motion and typing logic.
+ * Must match zsl/features.py and zsl/typist.py exactly; the phone and the
  * desktop share one trained model (zsl_model.json, written by train.py). */
 (function (root) {
   "use strict";
+  var NOT_A_SIGN = "_";           // the model's "not a sign" label: never typed
+  var MOVING_SIGNS = ["J", "Z"];  // letters signed with a movement get a looser limit
   var N_SLOTS = 2;
   var HAND_DIM = 21 * 3 + 2 + 1 + 1;
   var FEATURE_DIM = HAND_DIM * N_SLOTS;
@@ -74,7 +76,37 @@
     return a;
   };
 
-  /* Turns a stream of per-frame guesses into typed text (same as live.py) */
+  /* How fast the signing hand (the highest one) moves, in palm-lengths per second.
+   * Compares the hand now with where it was `window` seconds ago, so tracker
+   * jitter doesn't count as movement (same as zsl/typist.py MotionMeter). */
+  function MotionMeter(window) {
+    this.window = window != null ? window : 0.2;
+    this.hist = [];
+    this.speed = null;
+  }
+  MotionMeter.prototype.reset = function () { this.hist = []; this.speed = null; };
+  MotionMeter.prototype.update = function (hands, aspect, t) {
+    if (!hands || hands.length === 0) { this.reset(); return null; }
+    var hand = hands[0], k, i;
+    for (k = 1; k < hands.length; k++) if (hands[k][0].y < hand[0].y) hand = hands[k];
+    var pts = new Float64Array(42);
+    for (i = 0; i < 21; i++) { pts[2 * i] = hand[i].x * aspect; pts[2 * i + 1] = hand[i].y; }
+    var palm = Math.max(Math.hypot(pts[18] - pts[0], pts[19] - pts[1]), 1e-4);
+    this.hist.push({ t: t, pts: pts });
+    while (this.hist.length > 2 && t - this.hist[1].t >= this.window) this.hist.shift();
+    var ref = this.hist[0];
+    if (t - ref.t < this.window / 2) {
+      this.speed = null;
+    } else {
+      var moved = 0;
+      for (i = 0; i < 21; i++) moved += Math.hypot(pts[2 * i] - ref.pts[2 * i], pts[2 * i + 1] - ref.pts[2 * i + 1]);
+      this.speed = moved / 21 / palm / (t - ref.t);
+    }
+    return this.speed;
+  };
+
+  /* Turns a stream of per-frame guesses into typed text (same as zsl/typist.py).
+   * Types when the same guess lasted `hold` s and the hand was still for the last `stillTime` s. */
   function Typist(labels, opts) {
     opts = opts || {};
     this.labels = labels;
@@ -82,13 +114,18 @@
     this.hold = opts.hold != null ? opts.hold : 0.5;
     this.gap = opts.gap != null ? opts.gap : 1.0;
     this.smooth = opts.smooth || 8;
+    this.stillLimit = opts.still != null ? opts.still : 1.0;
+    this.stillTime = opts.stillTime != null ? opts.stillTime : 0.15;
+    this.movingSigns = opts.movingSigns || MOVING_SIGNS;
+    this.movingFactor = opts.movingFactor != null ? opts.movingFactor : 3.0;
     this.buf = [];
     this.text = ""; this.cand = null; this.candT = 0; this.last = null; this.noHand = 0;
-    this.guess = null; this.conf = 0;
+    this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
   }
-  Typist.prototype.update = function (proba, dt) {
+  /* speed: MotionMeter speed, or null if unknown */
+  Typist.prototype.update = function (proba, dt, speed) {
     if (!proba) {
-      this.buf = []; this.cand = null; this.guess = null;
+      this.buf = []; this.cand = null; this.guess = null; this.still = false;
       this.noHand += dt;
       if (this.noHand >= this.gap) {
         this.last = null;
@@ -102,16 +139,20 @@
     var n = proba.length, avg = new Float64Array(n), top = 0, i;
     for (var b = 0; b < this.buf.length; b++) for (i = 0; i < n; i++) avg[i] += this.buf[b][i] / this.buf.length;
     for (i = 1; i < n; i++) if (avg[i] > avg[top]) top = i;
-    this.guess = this.labels[top]; this.conf = avg[top];
-    if (this.conf < this.minConf) { this.cand = null; return null; }
+    var lab = this.labels[top];
+    this.guess = lab; this.conf = avg[top];
+    var limit = this.stillLimit * (this.movingSigns.indexOf(lab) >= 0 ? this.movingFactor : 1);
+    this.still = this.stillLimit <= 0 || (speed != null && speed <= limit);
+    if (lab === NOT_A_SIGN || this.conf < this.minConf) { this.cand = null; return null; }
     if (top !== this.cand) {
-      this.cand = top; this.candT = 0;
+      this.cand = top; this.candT = 0; this.stillT = 0;
       if (top !== this.last) this.last = null;
     } else {
       this.candT += dt;
+      this.stillT = this.still ? this.stillT + dt : 0;
     }
-    if (this.candT >= this.hold && top !== this.last) {
-      var lab = this.labels[top];
+    var settled = this.stillLimit <= 0 || this.stillT >= this.stillTime;
+    if (this.candT >= this.hold && settled && top !== this.last) {
       this.text += lab.length === 1 ? lab : lab + " ";
       this.last = top;
       return "sign";
@@ -119,7 +160,8 @@
     return null;
   };
 
-  var api = { frameFeatures: frameFeatures, Model: Model, Typist: Typist, FEATURE_DIM: FEATURE_DIM };
+  var api = { frameFeatures: frameFeatures, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
+    FEATURE_DIM: FEATURE_DIM, NOT_A_SIGN: NOT_A_SIGN };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ZSL = api;
 })(this);
