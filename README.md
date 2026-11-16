@@ -19,9 +19,13 @@ of the hands and shoulders as numbers, with no faces and no pictures.
    signs automatically. It reads the on-screen label (for example, the letter in
    a yellow circle), so you don't have to label anything by hand.
 4. **Recognition:** a small neural network (scikit-learn) classifies each frame.
-   `live.py` smooths the guesses and types a sign once it's held for half a
-   second.
-5. **Left-handed signers:** training adds mirrored copies, so it works for
+   `live.py` smooths the guesses and types a sign once it's shown for half a
+   second **and the hand has settled**. While the hand is moving (word signs,
+   moving between letters) nothing is typed.
+5. **Not a sign:** the model can also learn a "not a sign" answer (label `_`)
+   from videos of word signs and everyday hand movement, so it stops forcing
+   every handshape into a letter.
+6. **Left-handed signers:** training adds mirrored copies, so it works for
    either hand.
 
 ## Results so far
@@ -34,9 +38,28 @@ of the hands and shoulders as numbers, with no faces and no pictures.
 | Held-back frames, same signer | 77% of single frames correct before smoothing |
 | Phone app in Chrome, camera shown L, O, V, E | Typed **LOVE** |
 | Phone app maths compared with the Python version (92 frames) | Same answer on every frame |
+| ZNBC news interpreter, 30 s filmed off a TV (15 Nov) | Typed only "H A": the model only knows still letters, so word signs confused it |
 
 All of these use one signer. The next milestone is testing on people the model
 has never seen (see step 5 below).
+
+### Junk letters on word signs (16 Nov)
+
+Stand-in footage from a public ASL video dictionary: 57 word-sign clips
+(94 s), 26 single-letter clips, and lower-quality 25 fps copies of the letters.
+The same MediaPipe tracking as the app was used. This is ASL, not ZSL, so treat
+the numbers as a direction, not a score.
+
+| | Junk letters on word signs | Letters it already read right, still typed |
+|---|---|---|
+| Before (hold 0.5 s) | 42 in 57 clips | 7 of 7 |
+| Still-hand rule, current model | 27 in 57 clips (35 → 20 when played back to back) | 6 of 7 (also 6 of 7 at 25 fps) |
+| `live.py` on 34 s of unseen word signs | 20 → 13 | |
+| Demo model that also learned "not a sign" from 29 *other* word clips | 20 → 1 on the same 34 s; 19 → 1 over 28 unseen clips | Same as without "not a sign" (23 of 26 letter clips with the still-hand rule, 26 without) |
+
+The "not a sign" demo still read fingerspelling by the word-clip signers as
+letters, so it learned handshapes rather than just "this video looks
+different". The real model needs ZSL "not a sign" data (step 4b below).
 
 ## Phone app (Android, works offline)
 
@@ -61,6 +84,8 @@ To update the phone's model, run `python train.py` (it rewrites
 - [ ] Record Deaf signers with consent (with ZNAD, schools for the Deaf, Signs of Love)
 - [ ] Words with movement (sequence model over frames)
 - [x] Offline Android app (MediaPipe runs on the phone)
+- [x] Don't type while the hand is moving (still-hand rule)
+- [ ] "Not a sign" examples from ZSL signers and ZNBC clips (the code is ready)
 - [ ] Other direction: speech to sign
 
 ---
@@ -120,7 +145,14 @@ This takes under a minute. It prints a test score and the signs it mixes up.
 python live.py            # add --speak to hear each word
 ```
 
-- Hold a sign still for about half a second and it gets typed.
+If you haven't trained anything on this computer yet, it uses the phone app's
+model (`app/www/zsl_model.json`), so you can try it straight away.
+
+- Hold a sign **still** for about half a second and it gets typed. The screen
+  says "moving - hold still" while your hand is moving.
+- `--still 0` turns the still-hand rule off. `--still 1.5` is looser and
+  `--still 0.75` stricter (palm-lengths per second). `--still-time` sets how
+  long the hand must settle (default 0.15 s).
 - Drop your hands for 1 second to start a new word.
 - To repeat a letter (the LL in HELLO), drop your hand briefly in between.
 - Keys: **Q** quit, **C** clear, **Backspace** delete, **S** speak.
@@ -134,6 +166,24 @@ python train.py
 
 - **Space** records the sign shown: a 1-second countdown, then 1.5 seconds of signing.
 - Use codes like P01 and P02, not names, and only record people who have agreed.
+
+## 4b. Teach it what is NOT a sign
+
+This stops it typing junk while someone signs words. Give it examples of hands
+doing things that aren't letters: word signs, natural signing, moving between
+letters, talking with your hands, scratching your face, resting.
+
+```bash
+python video_to_dataset.py videos/znbc_news.mp4 --none     # a whole video of word signs
+python collect.py --labels _ --signer P01 --samples 10     # record your own
+python train.py
+```
+
+- In a times CSV, a `_` row also means "not a sign", for example the intro of
+  a video: `_,0:00,0:07`.
+- `train.py` now also prints **junk let through** (not-a-sign frames read as a
+  letter) and **signs wrongly ignored**. You want both low.
+- If a video has one sign only, use `--label HELLO` instead of a CSV.
 
 ## 5. Honest test
 
@@ -157,12 +207,17 @@ This scores the model on a person it has never seen.
 | `live.py` | Live camera to text and speech |
 | `zsl/tracker.py` | MediaPipe hand and body tracking (works with old and new MediaPipe) |
 | `zsl/features.py` | Turns hand points into numbers the model learns from |
+| `zsl/typist.py` | Still-hand meter and the rules for when a sign gets typed |
+| `zsl/jsonmodel.py` | Lets `live.py` use the phone app's model file |
+| `tests/test_typist.py` | Quick check of the typing rules, and that the phone app matches Python |
 | `app/` | The offline Android app (see above) |
 
 ## Limits of this version
 
 - It reads **handshapes** frame by frame. Moving letters such as J and Z can be
-  confused with similar still letters.
+  confused with similar still letters. They get a looser still-hand limit.
+- Letters flashed very quickly (still for less than about 0.15 s) are skipped.
+  That is the price of not typing junk; use `--still 0` for the old behaviour.
 - One signer so far, so accuracy on new people will be lower until more signers
   are added.
 

@@ -4,6 +4,10 @@
     python train.py --test webcam_P02     # honest test: hold out a recording of a
                                           # person the model has never seen
 
+If the data has "not a sign" examples (label "_", from video_to_dataset.py
+--none or collect.py --labels _), the model learns to say "not a sign", and
+the test shows how often junk gets through.
+
 Saves models/zsl_model.joblib, which live.py uses.
 """
 import argparse
@@ -18,7 +22,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from zsl.features import FEATURE_DIM, mirror
+from zsl.features import FEATURE_DIM, NOT_A_SIGN, mirror
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -43,6 +47,22 @@ def load(data_dir):
               "That's fine, but tracking can differ slightly between them.")
     load.backends = backends
     return np.concatenate(X), np.concatenate(y), np.concatenate(src), np.concatenate(pos)
+
+
+def balance_not_sign(X, y, src, pos, factor=10, seed=0):
+    """Keep "not a sign" from swamping the signs: at most `factor` x the typical sign's examples."""
+    is_none = y == NOT_A_SIGN
+    counts = Counter(y[~is_none])
+    if not is_none.any() or not counts:
+        return X, y, src, pos
+    cap = int(factor * np.median(list(counts.values())))
+    if is_none.sum() <= cap:
+        return X, y, src, pos
+    rng = np.random.default_rng(seed)
+    keep = ~is_none
+    keep[rng.choice(np.flatnonzero(is_none), cap, replace=False)] = True
+    print(f"Using {cap} of {int(is_none.sum())} 'not a sign' examples (so they don't drown out the signs)")
+    return X[keep], y[keep], src[keep], pos[keep]
 
 
 def augment(X, y, use_mirror=True, copies=2, seed=0):
@@ -85,14 +105,22 @@ def export_json(model, labels, path):
 def report(model, Xt, yt, title):
     pred = model.predict(Xt)
     acc = (pred == yt).mean()
+    name = lambda lab: "not-a-sign" if lab == NOT_A_SIGN else lab
     print(f"\n{title}: {acc * 100:.1f}% of {len(yt)} test frames correct")
     labels = sorted(set(yt))
     per = {lab: (pred[yt == lab] == lab).mean() for lab in labels}
     worst = sorted(per.items(), key=lambda kv: kv[1])[:5]
-    print("  hardest signs: " + ", ".join(f"{k} {v * 100:.0f}%" for k, v in worst))
+    print("  hardest signs: " + ", ".join(f"{name(k)} {v * 100:.0f}%" for k, v in worst))
     mix = Counter((t, p) for t, p in zip(yt, pred) if t != p).most_common(5)
     if mix:
-        print("  most mixed up: " + ", ".join(f"{t}->{p} ({n})" for (t, p), n in mix))
+        print("  most mixed up: " + ", ".join(f"{name(t)}->{name(p)} ({n})" for (t, p), n in mix))
+    none = yt == NOT_A_SIGN
+    if none.any():
+        print(f"  junk let through: {(pred[none] != NOT_A_SIGN).mean() * 100:.0f}% of 'not a sign' "
+              "frames were read as a sign (lower is better)")
+    if (~none).any() and NOT_A_SIGN in model.classes_:
+        print(f"  signs wrongly ignored: {(pred[~none] == NOT_A_SIGN).mean() * 100:.0f}% of sign "
+              "frames were read as 'not a sign' (lower is better)")
     return acc
 
 
@@ -106,7 +134,10 @@ def main():
 
     print("Loading data:")
     X, y, src, pos = load(args.data)
-    print(f"Total: {len(X)} examples, {len(set(y))} signs, {len(set(src))} source(s)")
+    X, y, src, pos = balance_not_sign(X, y, src, pos)
+    n_signs = len(set(y) - {NOT_A_SIGN})
+    extra = " + 'not a sign'" if NOT_A_SIGN in set(y) else " (no 'not a sign' examples yet)"
+    print(f"Total: {len(X)} examples, {n_signs} signs{extra}, {len(set(src))} source(s)")
 
     if args.test:
         test = np.char.startswith(src.astype(str), args.test)
