@@ -12,7 +12,7 @@
   var POSE_LINKS = [[11,12],[11,13],[13,15],[12,14],[14,16]];
 
   var facing = "environment", stream = null;
-  var model = null, typist = null, hands = null, pose = null;
+  var model = null, typist = null, meter = null, hands = null, pose = null;
   var lastHands = [], lastPose = null, frame = 0, lastT = null, busy = false;
   var autoSpeak = false;
   var stats = { frames: 0, start: 0 };
@@ -33,7 +33,7 @@
 
   function renderText() {
     var t = typist ? typist.text : "";
-    if (!t) { textEl.innerHTML = '<span class="placeholder">Signs you hold for half a second appear here.</span>'; return; }
+    if (!t) { textEl.innerHTML = '<span class="placeholder">Signs you hold still for half a second appear here.</span>'; return; }
     textEl.textContent = t;
     var c = document.createElement("span"); c.className = "caret"; c.innerHTML = "&nbsp;";
     textEl.appendChild(c);
@@ -46,11 +46,16 @@
       hintEl.textContent = lastHands.length ? "Hold still…" : "Show a sign";
       return;
     }
+    if (typist.guess === ZSL.NOT_A_SIGN) {
+      signEl.textContent = "–"; barEl.style.width = "0"; guessEl.classList.remove("sure");
+      hintEl.textContent = "Not a sign";
+      return;
+    }
     signEl.textContent = typist.guess;
     barEl.style.width = Math.round(typist.conf * 100) + "%";
     var sure = typist.conf >= typist.minConf;
-    guessEl.classList.toggle("sure", sure);
-    hintEl.textContent = sure ? Math.round(typist.conf * 100) + "% sure" : "Not sure yet";
+    guessEl.classList.toggle("sure", sure && typist.still);
+    hintEl.textContent = !sure ? "Not sure yet" : typist.still ? Math.round(typist.conf * 100) + "% sure" : "Moving – hold still";
   }
 
   function draw() {
@@ -107,7 +112,8 @@
       lastT = now;
       var feats = ZSL.frameFeatures(lastHands, lastPose, video.videoWidth / video.videoHeight);
       var proba = feats ? model.predict(feats) : null;
-      var ev = typist.update(proba, dt);
+      var speed = meter.update(lastHands, video.videoWidth / video.videoHeight, now);
+      var ev = typist.update(proba, dt, speed);
       if (ev === "sign") { renderText(); window.__zsl.log.push(typist.text.trim().slice(-1) + "@" + (video.currentTime || now).toFixed(1)); }
       if (ev === "word") { renderText(); if (autoSpeak) speak(typist.text.trim().split(" ").pop()); }
       renderGuess();
@@ -134,7 +140,8 @@
     var res = await fetch("zsl_model.json");
     var json = await res.json();
     model = new ZSL.Model(json);
-    typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0 });
+    typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0, still: 1.0 });
+    meter = new ZSL.MotionMeter(0.2);
 
     hands = new Hands({ locateFile: function (f) { return "mediapipe/hands/" + f; } });
     hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: false });
