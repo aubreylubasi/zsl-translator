@@ -42,9 +42,62 @@
     return out;
   }
 
+  /* Can we trust the body position? The model measures the hand against the
+   * shoulders, so without real shoulders every guess is unreliable.
+   * Returns null when the framing is fine, otherwise a short reason:
+   *   "no-body"   no person found, or shoulders hidden or outside the picture
+   *   "fake-body" the "shoulders" sit on the hand (the tracker mistook the hand for a body)
+   *   "too-close" the hand is huge next to the shoulders (hand right up at the camera) */
+  var MIN_VIS = 0.5, MAX_PALM_RATIO = 0.7;  // training data: 0.32 ± 0.06
+  function framingIssue(hands, pose, aspect) {
+    if (!hands || hands.length === 0) return null;
+    if (!pose || !pose[11] || !pose[12]) return "no-body";
+    var sh = [pose[11], pose[12]];
+    for (var i = 0; i < 2; i++) {
+      var p = sh[i];
+      if (p.visibility != null && p.visibility < MIN_VIS) return "no-body";
+      if (p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return "no-body";
+    }
+    var width = Math.max(Math.hypot((sh[0].x - sh[1].x) * aspect, sh[0].y - sh[1].y), 1e-3);
+    for (var k = 0; k < hands.length; k++) {
+      var h = hands[k], x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+      for (var j = 0; j < 21; j++) {
+        x0 = Math.min(x0, h[j].x); x1 = Math.max(x1, h[j].x);
+        y0 = Math.min(y0, h[j].y); y1 = Math.max(y1, h[j].y);
+      }
+      for (i = 0; i < 2; i++) {
+        if (sh[i].x > x0 && sh[i].x < x1 && sh[i].y > y0 && sh[i].y < y1) return "fake-body";
+      }
+      var palm = Math.hypot((h[9].x - h[0].x) * aspect, h[9].y - h[0].y);
+      if (palm / width > MAX_PALM_RATIO) return "too-close";
+    }
+    return null;
+  }
+
+  /* Motion window: the last `seconds` of signing as `frames` snapshots side by side,
+   * oldest first. Same maths as Window in zsl/features.py. */
+  var WINDOW_STALE = 0.25;
+  function Window(frames, seconds) { this.k = frames; this.w = seconds; this.hist = []; }
+  Window.prototype.reset = function () { this.hist = []; };
+  Window.prototype.update = function (t, feats) {
+    if (!feats) return null;
+    var cut = t - this.w - WINDOW_STALE;
+    this.hist = this.hist.filter(function (e) { return e[0] >= cut; });
+    this.hist.push([t, feats]);
+    var n = feats.length, out = new Float32Array(n * this.k), j = 0;
+    for (var i = 0; i < this.k; i++) {
+      var ts = t - this.w * (this.k - 1 - i) / (this.k - 1);
+      while (j + 1 < this.hist.length && this.hist[j + 1][0] <= ts + 1e-9) j++;
+      out.set(this.hist[j][1], i * n);
+    }
+    return out;
+  };
+
   /* Small neural network exported from scikit-learn by train.py */
   function Model(json) {
-    if (json.feature_dim !== FEATURE_DIM) throw new Error("Model was made for a different app version");
+    this.moving = json.moving || [];
+    this.window = json.window || null;  // {frames, seconds} for a motion model
+    if (json.feature_dim !== FEATURE_DIM * (this.window ? this.window.frames : 1)) throw new Error("Model was made for a different app version");
     this.labels = json.labels;
     this.mean = Float64Array.from(json.mean);
     this.scale = Float64Array.from(json.scale);
@@ -118,10 +171,17 @@
     this.stillTime = opts.stillTime != null ? opts.stillTime : 0.15;
     this.movingSigns = opts.movingSigns || MOVING_SIGNS;
     this.movingFactor = opts.movingFactor != null ? opts.movingFactor : 3.0;
+    // word signs with a movement (from the model's "moving" list): no still rule
+    this.freeMove = (opts.freeMove || []).filter(function (l) { return l !== "J" && l !== "Z"; });
+    this.moveHold = opts.moveHold != null ? opts.moveHold : 0.3;
     this.buf = [];
     this.text = ""; this.cand = null; this.candT = 0; this.last = null; this.noHand = 0;
     this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
   }
+  /* Forget the current guess without ending the word (used while the framing is bad). */
+  Typist.prototype.pause = function () {
+    this.buf = []; this.cand = null; this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
+  };
   /* speed: MotionMeter speed, or null if unknown */
   Typist.prototype.update = function (proba, dt, speed) {
     if (!proba) {
@@ -142,7 +202,7 @@
     var lab = this.labels[top];
     this.guess = lab; this.conf = avg[top];
     var limit = this.stillLimit * (this.movingSigns.indexOf(lab) >= 0 ? this.movingFactor : 1);
-    this.still = this.stillLimit <= 0 || (speed != null && speed <= limit);
+    this.still = this.stillLimit <= 0 || this.freeMove.indexOf(lab) >= 0 || (speed != null && speed <= limit);
     if (lab === NOT_A_SIGN || this.conf < this.minConf) { this.cand = null; return null; }
     if (top !== this.cand) {
       this.cand = top; this.candT = 0; this.stillT = 0;
@@ -152,7 +212,8 @@
       this.stillT = this.still ? this.stillT + dt : 0;
     }
     var settled = this.stillLimit <= 0 || this.stillT >= this.stillTime;
-    if (this.candT >= this.hold && settled && top !== this.last) {
+    var hold = this.freeMove.indexOf(lab) >= 0 ? this.moveHold : this.hold;
+    if (this.candT >= hold && settled && top !== this.last) {
       this.text += lab.length === 1 ? lab : lab + " ";
       this.last = top;
       return "sign";
@@ -160,7 +221,7 @@
     return null;
   };
 
-  var api = { frameFeatures: frameFeatures, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
+  var api = { frameFeatures: frameFeatures, framingIssue: framingIssue, Window: Window, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
     FEATURE_DIM: FEATURE_DIM, NOT_A_SIGN: NOT_A_SIGN };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ZSL = api;

@@ -22,14 +22,16 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from zsl.features import FEATURE_DIM, NOT_A_SIGN, mirror
+from zsl.features import (FEATURE_DIM, NOT_A_SIGN, WINDOW_FRAMES, WINDOW_SECONDS, Window, mirror,
+                          moving_from_label_files)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 def load(data_dir):
-    X, y, src, pos = [], [], [], []
+    X, y, src, pos, seg, ts = [], [], [], [], [], []
     backends = set()
+    guessed = []
     for path in sorted(glob.glob(os.path.join(data_dir, "*.npz"))):
         d = np.load(path, allow_pickle=False)
         if d["X"].shape[1] != FEATURE_DIM or len(d["X"]) == 0:
@@ -39,14 +41,43 @@ def load(data_dir):
         backends.add(str(d["backend"]) if "backend" in d.files else "unknown")
         X.append(d["X"]); y.append(d["y"]); pos.append(d["pos"])
         src.append(np.full(len(d["X"]), name))
+        sg = d["seg"] if "seg" in d.files else np.zeros(len(d["X"]), dtype=int)
+        seg.append(sg)
+        if "t" in d.files:
+            ts.append(d["t"].astype(np.float64))
+        else:  # older files: assume 30 frames a second within each take
+            t = np.zeros(len(sg))
+            for s in np.unique(sg):
+                idx = np.flatnonzero(sg == s)
+                t[idx] = np.arange(len(idx)) / 30.0
+            ts.append(t)
+            guessed.append(name)
         print(f"  {name}: {len(d['X'])} examples, {len(set(d['y']))} signs")
     if not X:
         sys.exit("No data yet. Run video_to_dataset.py or collect.py first.")
     if len(backends) > 1:
         print(f"Note: data was made with different MediaPipe versions ({', '.join(sorted(backends))}). "
               "That's fine, but tracking can differ slightly between them.")
+    if guessed:
+        print(f"Note: {', '.join(guessed)} has no frame times (made before 21 Nov 2026), so 30 fps is "
+              "assumed. Only the motion model uses the times.")
     load.backends = backends
+    load.seg, load.t = np.concatenate(seg), np.concatenate(ts)
     return np.concatenate(X), np.concatenate(y), np.concatenate(src), np.concatenate(pos)
+
+
+def make_windows(X, src, seg, t, frames=WINDOW_FRAMES, seconds=WINDOW_SECONDS):
+    """Turn every frame into a motion window (that frame plus the frames before it in the same
+    take), using the same Window class as live.py and the phone app."""
+    out = np.zeros((len(X), FEATURE_DIM * frames), dtype=np.float32)
+    keys = np.char.add(np.char.add(src.astype(str), "#"), seg.astype(str))
+    for key in np.unique(keys):
+        idx = np.flatnonzero(keys == key)
+        idx = idx[np.argsort(t[idx], kind="stable")]
+        win = Window(frames, seconds)
+        for i in idx:
+            out[i] = win.update(float(t[i]), X[i])
+    return out
 
 
 def balance_not_sign(X, y, src, pos, factor=10, seed=0):
@@ -84,14 +115,16 @@ def make_model():
         hidden_layer_sizes=(256, 128), alpha=1e-3, max_iter=300, random_state=0))
 
 
-def export_json(model, labels, path):
+def export_json(model, labels, path, moving=(), window=None):
     """Save the model as plain numbers for the phone app (app/www)."""
     import json
     scaler, mlp = model.steps[0][1], model.steps[1][1]
     r = lambda a: [float(f"{v:.6g}") for v in np.asarray(a).ravel()]
     data = {
         "labels": [str(s) for s in labels],
-        "feature_dim": FEATURE_DIM,
+        "feature_dim": FEATURE_DIM * (window["frames"] if window else 1),
+        "window": window,
+        "moving": sorted(str(s) for s in moving),
         "mean": r(scaler.mean_), "scale": r(scaler.scale_),
         "activation": mlp.activation,
         "layers": [{"in": int(W.shape[0]), "out": int(W.shape[1]), "W": r(W), "b": r(b)}
@@ -130,10 +163,26 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "models", "zsl_model.joblib"))
     ap.add_argument("--test", help="hold out data files whose name starts with this (e.g. a different signer)")
     ap.add_argument("--no-mirror", action="store_true", help="don't add left-handed copies")
+    ap.add_argument("--motion", default="auto", choices=["auto", "on", "off"],
+                    help="motion model that reads the last %.1f s of signing instead of one frame "
+                         "(auto: on when the data has word signs marked * in labels/)" % WINDOW_SECONDS)
     args = ap.parse_args()
 
     print("Loading data:")
     X, y, src, pos = load(args.data)
+    moving = sorted(moving_from_label_files(os.path.join(ROOT, "labels")) & set(y))
+    words = [m for m in moving if m not in ("J", "Z")]
+    motion = args.motion == "on" or (args.motion == "auto" and bool(words))
+    window = {"frames": WINDOW_FRAMES, "seconds": WINDOW_SECONDS} if motion else None
+    if motion:
+        why = f"word signs with a movement: {', '.join(words[:6])}{'...' if len(words) > 6 else ''}" \
+            if words else "--motion on"
+        print(f"Motion model ({why}): each example is the last {WINDOW_SECONDS} s as "
+              f"{WINDOW_FRAMES} snapshots.")
+        X = make_windows(X, src, load.seg, load.t)
+    else:
+        print("Single-frame model" + (" (--motion off)." if args.motion == "off" else
+              " (no word signs marked * in the data). Use --motion on to force the motion model."))
     X, y, src, pos = balance_not_sign(X, y, src, pos)
     n_signs = len(set(y) - {NOT_A_SIGN})
     extra = " + 'not a sign'" if NOT_A_SIGN in set(y) else " (no 'not a sign' examples yet)"
@@ -156,12 +205,15 @@ def main():
     Xa, ya = augment(X, y, not args.no_mirror)
     model = make_model().fit(Xa, ya)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    joblib.dump({"model": model, "labels": list(model.classes_), "feature_dim": FEATURE_DIM,
+    joblib.dump({"model": model, "labels": list(model.classes_), "feature_dim": FEATURE_DIM, "moving": moving,
+                 "window": window,
                  "sources": sorted(set(src)), "backend": sorted(load.backends)[0]}, args.out)
+    if set(moving) - {"J", "Z"}:
+        print("Signed with a movement (no 'hold still' needed): " + ", ".join(m for m in moving if m not in ("J", "Z")))
     print(f"Saved -> {os.path.relpath(args.out, ROOT)}   Now run: python live.py")
     web = os.path.join(ROOT, "app", "www", "zsl_model.json")
     if os.path.isdir(os.path.join(ROOT, "app", "www")):
-        export_json(model, model.classes_, web)
+        export_json(model, model.classes_, web, moving, window)
         print(f"Phone app model -> {os.path.relpath(web, ROOT)}")
 
 

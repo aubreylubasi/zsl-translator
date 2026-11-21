@@ -53,25 +53,79 @@ def frame_features(lm):
 
 
 def mirror(X):
-    """Flip left/right, so the model also works for left-handed signers."""
-    X = np.asarray(X, dtype=np.float32).reshape(-1, N_SLOTS, HAND_DIM).copy()
+    """Flip left/right, so the model also works for left-handed signers.
+    Works on single frames and on motion windows (several frames side by side)."""
+    X = np.asarray(X, dtype=np.float32)
+    shape = X.shape
+    X = X.reshape(-1, N_SLOTS, HAND_DIM).copy()
     X[:, :, 0:63:3] *= -1   # x of every hand point
     X[:, :, 63] *= -1       # x of hand position
-    return X.reshape(-1, FEATURE_DIM)
+    return X.reshape(shape)
+
+
+WINDOW_FRAMES = 6      # snapshots in a motion window
+WINDOW_SECONDS = 1.2   # how far back the window reaches
+WINDOW_STALE = 0.25    # forget frames this much older than the window (e.g. after the hands dropped)
+
+
+class Window:
+    """Motion window: the last WINDOW_SECONDS of signing as WINDOW_FRAMES snapshots side by side,
+    oldest first, so the model sees how the hands moved, not just where they are now.
+    Same maths as Window in app/www/js/zsl.js, and train.py builds its examples with this class."""
+
+    def __init__(self, frames=WINDOW_FRAMES, seconds=WINDOW_SECONDS):
+        self.k, self.w = int(frames), float(seconds)
+        self.hist = []
+
+    def reset(self):
+        self.hist = []
+
+    def update(self, t, feats):
+        """Add this frame's features (None = no hands) and return the window, or None."""
+        if feats is None:
+            return None
+        self.hist = [e for e in self.hist if e[0] >= t - self.w - WINDOW_STALE] + [(t, feats)]
+        out, j = [], 0
+        for i in range(self.k):
+            ts = t - self.w * (self.k - 1 - i) / (self.k - 1)
+            while j + 1 < len(self.hist) and self.hist[j + 1][0] <= ts + 1e-9:
+                j += 1
+            out.append(self.hist[j][1])  # latest frame at or before ts (the oldest one if none)
+        return np.concatenate(out).astype(np.float32)
+
+
+def _label_parts(text):
+    """Raw entries from 'A-Z,HELLO' or a .txt file (one per line, '#' lines are notes)."""
+    import os
+    if os.path.isfile(text):
+        with open(text, encoding="utf-8") as f:
+            return [ln.strip() for ln in f if ln.strip() and not ln.strip().startswith("#")]
+    return [t.strip() for t in text.split(",")]
 
 
 def parse_labels(text):
     """'A-Z' -> ['A'..'Z'];  'A-Z,_' -> ['A'..'Z','_'];  'HELLO,THANK YOU' -> ['HELLO','THANK YOU'];
-    path to a .txt -> one per line.  '_' means "not a sign"."""
-    import os
-    if os.path.isfile(text):
-        with open(text, encoding="utf-8") as f:
-            return [ln.strip() for ln in f if ln.strip()]
+    path to a .txt -> one per line.  '_' means "not a sign".  A trailing '*' (a moving sign) is dropped."""
     out = []
-    for part in (t.strip() for t in text.split(",")):
+    for part in (p.rstrip("*").strip() for p in _label_parts(text)):
         m = re.fullmatch(r"([A-Za-z0-9])\s*-\s*([A-Za-z0-9])", part)
         if m:
             out += [chr(c) for c in range(ord(m.group(1)), ord(m.group(2)) + 1)]
         elif part:
             out.append(part)
+    return out
+
+
+def moving_labels(text):
+    """Signs marked with a trailing '*' (signed with a movement)."""
+    return [p.rstrip("*").strip() for p in _label_parts(text) if p.endswith("*")]
+
+
+def moving_from_label_files(folder):
+    """Every '*' sign in labels/*.txt, plus J and Z."""
+    import glob
+    import os
+    out = {"J", "Z"}
+    for path in sorted(glob.glob(os.path.join(folder, "*.txt"))):
+        out.update(moving_labels(path))
     return out

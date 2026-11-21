@@ -46,7 +46,7 @@ def main():
         raise SystemExit("Can't open the camera. On a Mac: System Settings > Privacy & Security > "
                          "Camera, and allow Terminal (or VS Code).")
     tracker = Tracker(backend=args.backend)
-    X, y, seg, pos = [], [], [], []
+    X, y, seg, pos, ts = [], [], [], [], []
     done = {lab: 0 for lab in labels}
     idx, take = 0, 0
     state, t_state, take_frames = "idle", 0.0, []
@@ -72,7 +72,7 @@ def main():
                 state = "idle"
                 if len(take_frames) >= 5:
                     for t, feat in take_frames:
-                        X.append(feat); y.append(lab); seg.append(take); pos.append(t / seconds)
+                        X.append(feat); y.append(lab); seg.append(take); pos.append(t / seconds); ts.append(t)
                     take += 1
                     done[lab] += 1
                     if done[lab] >= args.samples:
@@ -118,7 +118,8 @@ def main():
     name = f"webcam_{args.signer}_{time.strftime('%Y%m%d-%H%M%S')}"
     out = os.path.join(ROOT, "data", f"{name}.npz")
     np.savez_compressed(out, X=np.array(X, dtype=np.float32).reshape(-1, FEATURE_DIM), y=np.array(y),
-                        seg=np.array(seg), pos=np.array(pos, dtype=np.float32), src=np.array(name),
+                        seg=np.array(seg), pos=np.array(pos, dtype=np.float32), t=np.array(ts, dtype=np.float32),
+                        src=np.array(name),
                         backend=np.array(tracker.backend))
     print(f"Saved {take} takes ({len(X)} frames) -> data/{name}.npz   Now run: python train.py")
 

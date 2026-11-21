@@ -73,6 +73,10 @@ those once first. The test key is public, so for a real release save a private
 key as the secrets `ZSL_KEYSTORE_B64`, `ZSL_KEYSTORE_PASSWORD`, `ZSL_KEY_ALIAS`
 and `ZSL_KEY_PASSWORD`; the workflow then uses it instead.
 
+If your head and shoulders aren't in view, or the hand is right up against the
+camera, the app says "Step back" and types nothing. The model measures the hand
+against the shoulders, so without them its guesses can't be trusted.
+
 - `app/www/`: the app itself (HTML and JavaScript). It uses MediaPipe's hand and
   body tracking and the same model as the desktop version (`zsl_model.json`).
 - `app/android/`: a small Android wrapper that serves the app from inside the
@@ -86,7 +90,8 @@ To update the phone's model, run `python train.py` (it rewrites
 
 - [x] Alphabet from video, live webcam recognition, speech output
 - [ ] Record Deaf signers with consent (with ZNAD, schools for the Deaf, Signs of Love)
-- [ ] Words with movement (sequence model over frames)
+- [x] Motion model over the last 1.2 s, and 54 word signs plus numbers from the ZNAD poster ready to record (`labels/`)
+- [ ] Record the word signs and train them
 - [x] Offline Android app (MediaPipe runs on the phone)
 - [x] Don't type while the hand is moving (still-hand rule)
 - [ ] "Not a sign" examples from ZSL signers and ZNBC clips (the code is ready)
@@ -171,6 +176,24 @@ python train.py
 - **Space** records the sign shown: a 1-second countdown, then 1.5 seconds of signing.
 - Use codes like P01 and P02, not names, and only record people who have agreed.
 
+## 4a. Add numbers and word signs
+
+`labels/` has ready-made lists from the ZNAD poster "Easy to Use Zambian Sign
+Language": numbers 0 to 10 and 54 word signs (health, questions, family, food,
+work). Record a list, then train:
+
+```bash
+python collect.py --labels labels/health.txt --signer P01 --seconds 2.5
+python train.py
+```
+
+Signs marked `*` in a list are signed with a movement, so the app types them
+without waiting for the hand to stop. When the data has such signs,
+`train.py` builds a **motion model** that reads the last 1.2 s of signing
+instead of one frame, so it learns the movement too (`--motion off` turns it
+off). The phone app and `live.py` pick it up automatically. See
+`labels/README.md` for tips.
+
 ## 4b. Teach it what is NOT a sign
 
 This stops it typing junk while someone signs words. Give it examples of hands
@@ -207,6 +230,7 @@ This scores the model on a person it has never seen.
 |---|---|
 | `video_to_dataset.py` | Cuts a video into signs and keeps only hand numbers |
 | `collect.py` | Records signs from the webcam (numbers only) |
+| `labels/` | Sign lists from the ZNAD poster: numbers and word signs |
 | `train.py` | Trains the recogniser on everything in `data/` |
 | `live.py` | Live camera to text and speech |
 | `zsl/tracker.py` | MediaPipe hand and body tracking (works with old and new MediaPipe) |
@@ -218,8 +242,10 @@ This scores the model on a person it has never seen.
 
 ## Limits of this version
 
-- It reads **handshapes** frame by frame. Moving letters such as J and Z can be
-  confused with similar still letters. They get a looser still-hand limit.
+- The alphabet-only model reads **handshapes** frame by frame. Moving letters
+  such as J and Z can be confused with similar still letters. They get a looser
+  still-hand limit. Training with word signs switches to the motion model,
+  which sees movement (tested on made-up data so far, not real signers).
 - Letters flashed very quickly (still for less than about 0.15 s) are skipped.
   That is the price of not typing junk; use `--still 0` for the old behaviour.
 - One signer so far, so accuracy on new people will be lower until more signers

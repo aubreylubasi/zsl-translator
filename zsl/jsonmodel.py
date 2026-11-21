@@ -16,6 +16,8 @@ class JsonModel:
         if d.get("activation", "relu") != "relu":
             raise ValueError("only relu models are supported")
         self.labels = list(d["labels"])
+        self.moving = list(d.get("moving", []))
+        self.window = d.get("window")  # {"frames", "seconds"} for a motion model, else None
         self.feature_dim = int(d["feature_dim"])
         self.mean = np.array(d["mean"], dtype=np.float64)
         self.scale = np.array(d["scale"], dtype=np.float64)
