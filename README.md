@@ -73,6 +73,10 @@ those once first. The test key is public, so for a real release save a private
 key as the secrets `ZSL_KEYSTORE_B64`, `ZSL_KEYSTORE_PASSWORD`, `ZSL_KEY_ALIAS`
 and `ZSL_KEY_PASSWORD`; the workflow then uses it instead.
 
+If your head and shoulders aren't in view, or the hand is right up against the
+camera, the app says "Step back" and types nothing. The model measures the hand
+against the shoulders, so without them its guesses can't be trusted.
+
 - `app/www/`: the app itself (HTML and JavaScript). It uses MediaPipe's hand and
   body tracking and the same model as the desktop version (`zsl_model.json`).
 - `app/android/`: a small Android wrapper that serves the app from inside the
