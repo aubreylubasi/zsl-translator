@@ -162,6 +162,8 @@ def main():
     ap.add_argument("--data", default=os.path.join(ROOT, "data"))
     ap.add_argument("--out", default=os.path.join(ROOT, "models", "zsl_model.joblib"))
     ap.add_argument("--test", help="hold out data files whose name starts with this (e.g. a different signer)")
+    ap.add_argument("--phone-out", default=os.path.join(ROOT, "app", "www", "zsl_model.json"),
+                    help="phone model file: zsl_model.json (letters) or zsl_words.json (the app's Words button)")
     ap.add_argument("--no-mirror", action="store_true", help="don't add left-handed copies")
     ap.add_argument("--motion", default="auto", choices=["auto", "on", "off"],
                     help="motion model that reads the last %.1f s of signing instead of one frame "
@@ -211,8 +213,8 @@ def main():
     if set(moving) - {"J", "Z"}:
         print("Signed with a movement (no 'hold still' needed): " + ", ".join(m for m in moving if m not in ("J", "Z")))
     print(f"Saved -> {os.path.relpath(args.out, ROOT)}   Now run: python live.py")
-    web = os.path.join(ROOT, "app", "www", "zsl_model.json")
-    if os.path.isdir(os.path.join(ROOT, "app", "www")):
+    web = args.phone_out
+    if os.path.isdir(os.path.dirname(os.path.abspath(web))):
         export_json(model, model.classes_, web, moving, window)
         print(f"Phone app model -> {os.path.relpath(web, ROOT)}")
 

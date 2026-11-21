@@ -83,8 +83,18 @@ against the shoulders, so without them its guesses can't be trusted.
   APK and blocks all internet access, so nothing leaves the phone.
 - `.github/workflows/android.yml`: GitHub builds a new APK on every push.
 
-To update the phone's model, run `python train.py` (it rewrites
-`app/www/zsl_model.json`), then commit and push.
+The **Letters / Words** button switches between two models: the alphabet
+(`app/www/zsl_model.json`) and word signs from the lesson videos
+(`app/www/zsl_words.json`, 17 greetings from Lesson 1 so far). The typed text
+is kept when you switch.
+
+To update the phone's models, run `python train.py` (it rewrites
+`app/www/zsl_model.json`), then commit and push. To rebuild only the Words
+model, put the word-sign data in its own folder and run
+`python train.py --data data/words --phone-out app/www/zsl_words.json`.
+Training on letters and words together in one model is the long-term plan;
+until the alphabet data is back on the Mac, keep them separate so the phone
+doesn't lose the alphabet.
 
 ## Roadmap
 

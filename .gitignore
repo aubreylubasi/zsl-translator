@@ -3,6 +3,7 @@ __pycache__/
 models/
 videos/*.mp4
 data/*.npz
+data/**/*.npz
 data/*_preview.jpg
 data/*_captions.jpg
 .DS_Store
