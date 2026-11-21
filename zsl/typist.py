@@ -60,11 +60,12 @@ class Typist:
     """Turns a stream of per-frame guesses into typed text."""
 
     def __init__(self, labels, min_conf=0.6, hold=0.5, gap=1.0, smooth=8, still=1.0, still_time=0.15,
-                 moving_signs=MOVING_SIGNS, moving_factor=3.0, free_move=()):
+                 moving_signs=MOVING_SIGNS, moving_factor=3.0, free_move=(), move_hold=0.3):
         self.labels, self.min_conf, self.hold, self.gap = list(labels), min_conf, hold, gap
         self.still_limit, self.still_time = still, still_time
         self.moving_signs, self.moving_factor = set(moving_signs), moving_factor
         self.free_move = set(free_move) - {"J", "Z"}  # word signs with a movement: no still rule
+        self.move_hold = move_hold  # ...and a shorter hold, since the guess only settles late in the movement
         self.buf = deque(maxlen=smooth)
         self.text, self.cand, self.cand_t, self.last, self.no_hand = "", None, 0.0, None, 0.0
         self.still_t = 0.0
@@ -103,7 +104,8 @@ class Typist:
             self.cand_t += dt
             self.still_t = self.still_t + dt if self.still else 0.0
         settled = self.still_limit <= 0 or self.still_t >= self.still_time
-        if self.cand_t >= self.hold and settled and top != self.last:
+        hold = self.move_hold if lab in self.free_move else self.hold
+        if self.cand_t >= hold and settled and top != self.last:
             self.text += lab if len(lab) == 1 else lab + " "
             self.last = top
             self.log.append((t, lab))

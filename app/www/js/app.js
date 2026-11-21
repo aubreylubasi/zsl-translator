@@ -12,7 +12,7 @@
   var POSE_LINKS = [[11,12],[11,13],[13,15],[12,14],[14,16]];
 
   var facing = "environment", stream = null;
-  var model = null, typist = null, meter = null, hands = null, pose = null;
+  var model = null, typist = null, meter = null, hands = null, pose = null, win = null;
   var lastHands = [], lastPose = null, frame = 0, lastT = null, busy = false, framing = null;
   var FRAMING_HINTS = {
     "no-body": "Step back – show your head and shoulders",
@@ -105,6 +105,7 @@
     await video.play();
     stage.classList.toggle("mirror", facing === "user");
     lastHands = []; lastPose = null; framing = null;
+    if (win) win.reset();
   }
 
   async function step() {
@@ -128,7 +129,8 @@
         typist.pause(); // can't trust a guess without real shoulders: don't type anything
       } else {
         var feats = ZSL.frameFeatures(lastHands, lastPose, aspect);
-        ev = typist.update(feats ? model.predict(feats) : null, dt, speed);
+        var x = win ? win.update(now, feats) : feats; // motion model: last 1.2 s of signing
+        ev = typist.update(x ? model.predict(x) : null, dt, speed);
       }
       if (ev === "sign") { renderText(); window.__zsl.log.push(typist.text.trim().slice(-1) + "@" + (video.currentTime || now).toFixed(1)); }
       if (ev === "word") { renderText(); if (autoSpeak) speak(typist.text.trim().split(" ").pop()); }
@@ -156,6 +158,7 @@
     var res = await fetch("zsl_model.json");
     var json = await res.json();
     model = new ZSL.Model(json);
+    if (model.window) win = new ZSL.Window(model.window.frames, model.window.seconds);
     typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0, still: 1.0, freeMove: model.moving });
     meter = new ZSL.MotionMeter(0.2);
 

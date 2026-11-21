@@ -22,7 +22,7 @@ import time
 import cv2
 import joblib
 
-from zsl.features import FEATURE_DIM, NOT_A_SIGN, frame_features
+from zsl.features import FEATURE_DIM, NOT_A_SIGN, frame_features, Window
 from zsl.jsonmodel import JsonModel
 from zsl.tracker import Tracker, draw
 from zsl.typist import MotionMeter, Typist
@@ -33,7 +33,7 @@ PHONE_MODEL = os.path.join(ROOT, "app", "www", "zsl_model.json")
 
 
 def load_model(path):
-    """Returns (model, labels, backend, moving signs). Uses the phone app's model if nothing is trained here yet."""
+    """Returns (model, labels, backend, moving signs, motion window or None). Uses the phone app's model if nothing is trained here yet."""
     if path is None:
         path = DESKTOP_MODEL if os.path.exists(DESKTOP_MODEL) else PHONE_MODEL
         if path == PHONE_MODEL:
@@ -43,13 +43,15 @@ def load_model(path):
         raise SystemExit("No model yet - run train.py first.")
     if path.endswith(".json"):
         model = JsonModel(path)
-        if model.feature_dim != FEATURE_DIM:
+        frames = model.window["frames"] if model.window else 1
+        if model.feature_dim != FEATURE_DIM * frames:
             raise SystemExit("Model is from an older version - run train.py again.")
-        return model, model.labels, None, model.moving
+        return model, model.labels, None, model.moving, model.window
     bundle = joblib.load(path)
     if bundle["feature_dim"] != FEATURE_DIM:
         raise SystemExit("Model is from an older version - run train.py again.")
-    return bundle["model"], bundle["labels"], bundle.get("backend"), bundle.get("moving", [])
+    return (bundle["model"], bundle["labels"], bundle.get("backend"), bundle.get("moving", []),
+            bundle.get("window"))
 
 
 def speak(text):
@@ -84,7 +86,10 @@ def main():
     ap.add_argument("--backend", default="auto", choices=["auto", "tasks", "legacy"])
     args = ap.parse_args()
 
-    model, labels, trained_with, moving = load_model(args.model)
+    model, labels, trained_with, moving, window = load_model(args.model)
+    win = Window(window["frames"], window["seconds"]) if window else None
+    if win:
+        print(f"Motion model: reads the last {window['seconds']} s of signing.")
 
     cap = cv2.VideoCapture(args.video if args.video else args.camera)
     if not cap.isOpened():
@@ -113,7 +118,8 @@ def main():
         last_t = t
         lm = tracker.process(frame, t * 1000)
         f = frame_features(lm)
-        proba = None if f is None else model.predict_proba(f.reshape(1, -1))[0]
+        x = win.update(t, f) if win else f
+        proba = None if x is None else model.predict_proba(x.reshape(1, -1))[0]
         speed = meter.update(list(lm.hands.values()), lm.aspect, t)
         event = typist.update(proba, dt, t, speed)
         if proba is not None:
