@@ -34,9 +34,17 @@ python train.py
 - Train only what you've recorded: `train.py` learns every label in `data/`,
   so you can add one list at a time.
 
-## Limits
+## Motion model
 
-The model reads one frame at a time, so it learns the *handshape and position*
-of a word sign, not the movement itself. Signs with the same handshape in the
-same place but a different movement will be confused. The fix is a model that
-reads about 1 to 2 seconds of movement (next step in the main README).
+Once your data has word signs marked `*`, `train.py` switches to the **motion
+model** by itself. Instead of one frame, each guess looks at the last 1.2 s of
+signing as 6 snapshots, so it learns the movement, not just the handshape.
+Two signs with the same handshape and place but a different movement can then
+be told apart. It also handles the letters, so one model does everything.
+
+- `python train.py --motion off` forces the old one-frame model;
+  `--motion on` forces the motion model.
+- Recordings made before 21 Nov 2026 have no frame times, so 30 fps is assumed.
+  Record word signs again with the new `collect.py` for the best results.
+- Moving word signs are typed after 0.3 s of the same guess (letters: 0.5 s).
+- Check it: `python tests/test_motion.py`.

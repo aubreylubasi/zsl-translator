@@ -212,7 +212,7 @@ def process(video, args):
         for lab, s, e in segs:
             wr.writerow([lab, f"{s / fps:.2f}", f"{(e + 1) / fps:.2f}"])
 
-    X, y, seg_id, pos = [], [], [], []
+    X, y, seg_id, pos, ts = [], [], [], [], []
     print("\nSign   time          frames used")
     for k, (lab, s, e) in enumerate(segs):
         length = e - s + 1
@@ -221,6 +221,7 @@ def process(video, args):
         for j in range(a, min(b, len(feats) - 1) + 1):
             if feats[j] is not None:
                 X.append(feats[j]); y.append(lab); seg_id.append(k); pos.append((j - s) / length)
+                ts.append(j / fps)
                 used += 1
         flag = "" if used >= 10 else "   <- few hand frames, check this one"
         shown = "(not a sign)" if lab == NOT_A_SIGN else lab
@@ -229,6 +230,7 @@ def process(video, args):
     out = os.path.join(ROOT, "data", f"{name}.npz")
     np.savez_compressed(out, X=np.array(X, dtype=np.float32).reshape(-1, FEATURE_DIM),
                         y=np.array(y), seg=np.array(seg_id), pos=np.array(pos, dtype=np.float32),
+                        t=np.array(ts, dtype=np.float32),
                         src=np.array(name), backend=np.array(backend))
     print(f"\nSaved {len(X)} examples of {len(segs)} signs -> {os.path.relpath(out, ROOT)}")
     print(f"Sign times -> {os.path.relpath(seg_csv, ROOT)}")

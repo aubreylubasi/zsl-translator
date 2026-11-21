@@ -90,7 +90,8 @@ To update the phone's model, run `python train.py` (it rewrites
 
 - [x] Alphabet from video, live webcam recognition, speech output
 - [ ] Record Deaf signers with consent (with ZNAD, schools for the Deaf, Signs of Love)
-- [ ] Words with movement (sequence model over frames)
+- [x] Motion model over the last 1.2 s, and 54 word signs plus numbers from the ZNAD poster ready to record (`labels/`)
+- [ ] Record the word signs and train them
 - [x] Offline Android app (MediaPipe runs on the phone)
 - [x] Don't type while the hand is moving (still-hand rule)
 - [ ] "Not a sign" examples from ZSL signers and ZNBC clips (the code is ready)
@@ -187,7 +188,11 @@ python train.py
 ```
 
 Signs marked `*` in a list are signed with a movement, so the app types them
-without waiting for the hand to stop. See `labels/README.md` for tips.
+without waiting for the hand to stop. When the data has such signs,
+`train.py` builds a **motion model** that reads the last 1.2 s of signing
+instead of one frame, so it learns the movement too (`--motion off` turns it
+off). The phone app and `live.py` pick it up automatically. See
+`labels/README.md` for tips.
 
 ## 4b. Teach it what is NOT a sign
 
@@ -237,8 +242,10 @@ This scores the model on a person it has never seen.
 
 ## Limits of this version
 
-- It reads **handshapes** frame by frame. Moving letters such as J and Z can be
-  confused with similar still letters. They get a looser still-hand limit.
+- The alphabet-only model reads **handshapes** frame by frame. Moving letters
+  such as J and Z can be confused with similar still letters. They get a looser
+  still-hand limit. Training with word signs switches to the motion model,
+  which sees movement (tested on made-up data so far, not real signers).
 - Letters flashed very quickly (still for less than about 0.15 s) are skipped.
   That is the price of not typing junk; use `--still 0` for the old behaviour.
 - One signer so far, so accuracy on new people will be lower until more signers

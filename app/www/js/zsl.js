@@ -74,10 +74,30 @@
     return null;
   }
 
+  /* Motion window: the last `seconds` of signing as `frames` snapshots side by side,
+   * oldest first. Same maths as Window in zsl/features.py. */
+  var WINDOW_STALE = 0.25;
+  function Window(frames, seconds) { this.k = frames; this.w = seconds; this.hist = []; }
+  Window.prototype.reset = function () { this.hist = []; };
+  Window.prototype.update = function (t, feats) {
+    if (!feats) return null;
+    var cut = t - this.w - WINDOW_STALE;
+    this.hist = this.hist.filter(function (e) { return e[0] >= cut; });
+    this.hist.push([t, feats]);
+    var n = feats.length, out = new Float32Array(n * this.k), j = 0;
+    for (var i = 0; i < this.k; i++) {
+      var ts = t - this.w * (this.k - 1 - i) / (this.k - 1);
+      while (j + 1 < this.hist.length && this.hist[j + 1][0] <= ts + 1e-9) j++;
+      out.set(this.hist[j][1], i * n);
+    }
+    return out;
+  };
+
   /* Small neural network exported from scikit-learn by train.py */
   function Model(json) {
     this.moving = json.moving || [];
-    if (json.feature_dim !== FEATURE_DIM) throw new Error("Model was made for a different app version");
+    this.window = json.window || null;  // {frames, seconds} for a motion model
+    if (json.feature_dim !== FEATURE_DIM * (this.window ? this.window.frames : 1)) throw new Error("Model was made for a different app version");
     this.labels = json.labels;
     this.mean = Float64Array.from(json.mean);
     this.scale = Float64Array.from(json.scale);
@@ -153,6 +173,7 @@
     this.movingFactor = opts.movingFactor != null ? opts.movingFactor : 3.0;
     // word signs with a movement (from the model's "moving" list): no still rule
     this.freeMove = (opts.freeMove || []).filter(function (l) { return l !== "J" && l !== "Z"; });
+    this.moveHold = opts.moveHold != null ? opts.moveHold : 0.3;
     this.buf = [];
     this.text = ""; this.cand = null; this.candT = 0; this.last = null; this.noHand = 0;
     this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
@@ -191,7 +212,8 @@
       this.stillT = this.still ? this.stillT + dt : 0;
     }
     var settled = this.stillLimit <= 0 || this.stillT >= this.stillTime;
-    if (this.candT >= this.hold && settled && top !== this.last) {
+    var hold = this.freeMove.indexOf(lab) >= 0 ? this.moveHold : this.hold;
+    if (this.candT >= hold && settled && top !== this.last) {
       this.text += lab.length === 1 ? lab : lab + " ";
       this.last = top;
       return "sign";
@@ -199,7 +221,7 @@
     return null;
   };
 
-  var api = { frameFeatures: frameFeatures, framingIssue: framingIssue, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
+  var api = { frameFeatures: frameFeatures, framingIssue: framingIssue, Window: Window, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
     FEATURE_DIM: FEATURE_DIM, NOT_A_SIGN: NOT_A_SIGN };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ZSL = api;
