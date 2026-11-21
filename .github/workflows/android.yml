@@ -31,12 +31,28 @@ jobs:
       - name: Bundle the offline web app (MediaPipe engines + models)
         run: bash app/prepare.sh
 
-      - name: Build the APK
+      - name: Use a private signing key if one is saved as a secret
+        env:
+          KS: ${{ secrets.ZSL_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/zsl.jks"
+            echo "ZSL_KEYSTORE=$RUNNER_TEMP/zsl.jks" >> "$GITHUB_ENV"
+            echo "Signing with the private key"
+          else
+            echo "Signing with the fixed test key (app/android/app/zsl-test.jks)"
+          fi
+
+      - name: Build the signed release APK
         working-directory: app/android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        env:
+          ZSL_KEYSTORE_PASSWORD: ${{ secrets.ZSL_KEYSTORE_PASSWORD }}
+          ZSL_KEY_ALIAS: ${{ secrets.ZSL_KEY_ALIAS }}
+          ZSL_KEY_PASSWORD: ${{ secrets.ZSL_KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Name the APK
-        run: cp app/android/app/build/outputs/apk/debug/app-debug.apk ZSL-Translator.apk
+        run: cp app/android/app/build/outputs/apk/release/app-release.apk ZSL-Translator.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -51,7 +67,7 @@ jobs:
           gh release create latest-apk ZSL-Translator.apk \
             --prerelease \
             --title "ZSL Translator: latest test build" \
-            --notes "Offline Android test build from ${GITHUB_SHA::7}. Install it by opening the APK on your phone and allowing installs from this source. If an older test build is installed, uninstall it first."
+            --notes "Offline Android test build from ${GITHUB_SHA::7}. Install it by opening the APK on your phone and allowing installs from this source. Builds from now on share one signing key, so a new one installs over the last. If a build from before 21 Nov 2026 is installed, uninstall it once first."
 
       - name: Also keep a copy on the apk branch
         run: |
