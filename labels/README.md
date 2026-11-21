@@ -12,6 +12,7 @@ to sign each word; it is not included here (it is marked "not for sale").
 | `family.txt` | family, mother, father, brother, sister |
 | `food.txt` | 11 food signs (water, nshima, beans…) |
 | `work.txt` | 14 work and everyday signs (teacher, school, good, bad, Zambia…) |
+| `greetings.txt` | 19 greetings and everyday signs (hello, morning, night, deaf, sign, language…) from the ZSL lesson 1 video, not the poster |
 
 A `*` after a sign means it is signed with a movement. The app types those
 without waiting for the hand to stop. Remove the `*` from a sign you hold

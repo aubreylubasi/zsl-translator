@@ -4,6 +4,7 @@ models/
 videos/*.mp4
 data/*.npz
 data/*_preview.jpg
+data/*_captions.jpg
 .DS_Store
 
 # phone app build files

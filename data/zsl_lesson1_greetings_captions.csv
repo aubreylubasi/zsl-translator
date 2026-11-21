@@ -1,0 +1,24 @@
+# Made by caption_segments.py from zsl_lesson1_greetings_fixed.mp4. Rows starting with # are left out.
+label,start,end,speed
+LESSON,27.09,31.53,0.75
+1,32.47,34.57,0.75
+GREETINGS,35.27,40.64,0.75
+HI,42.74,46.71,0.75
+HELLO,48.58,52.09,0.75
+GOOD,54.19,56.76,0.75
+BAD,58.86,62.36,0.75
+MORNING,64.93,69.60,0.75
+MIDDAY,72.41,77.54,0.75
+AFTERNOON,78.71,83.15,0.75
+EVENING,84.08,86.65,0.75
+NIGHT,87.82,91.79,0.75
+# part of the sign is in a damaged/frozen part: VERY,138.97,140.61,0.75
+# skipped: SO,141.77,144.81,0.75
+# skipped: AND,153.45,156.72,0.75
+DEAF,162.56,165.83,0.75
+PERSON,166.53,169.57,0.75
+HEARING,171.67,174.71,0.75
+ZAMBIAN,177.74,180.55,0.75
+SIGN,181.25,183.82,0.75
+LANGUAGE,184.98,188.25,0.75
+# part of the sign is in a damaged/frozen part: ZSL,189.42,193.63,0.75

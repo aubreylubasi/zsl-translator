@@ -1,0 +1,23 @@
+# Greetings and everyday signs from the "Zambian Sign Language Communication"
+# Lesson 1 video (Greetings). * = signed with a movement, as the video's notes say.
+# Times for learning them from that video: data/zsl_lesson1_greetings_captions.csv
+# (1 is in numbers.txt; GOOD and BAD are in work.txt too.)
+# The video says "So" and "And" are English words, not natural ZSL, so they are left out.
+LESSON
+GREETINGS
+HI*
+HELLO*
+GOOD*
+BAD*
+MORNING
+MIDDAY
+AFTERNOON
+EVENING
+NIGHT*
+VERY*
+DEAF*
+PERSON*
+HEARING*
+ZAMBIAN
+SIGN*
+LANGUAGE*

@@ -6,8 +6,11 @@ series, where the letter appears in a yellow circle):
     python video_to_dataset.py Alphabet-ZSL.mp4 --labels A-Z --preview
 
 MANUAL - any other video: write a CSV of  label,start,end  (seconds or m:ss)
+and optionally speed (0.75 = slow motion, so the motion model learns real speed)
 
     python video_to_dataset.py greetings.mp4 --segments greetings.csv
+
+LESSON VIDEOS WITH CAPTIONS - caption_segments.py writes that CSV for you.
 
 ONE SIGN PER VIDEO - every video shows just one sign:
 
@@ -46,14 +49,20 @@ def parse_time(t):
 
 
 def read_segments_csv(path, fps):
-    segs = []
+    """Rows of label,start,end and an optional 4th column, speed: how fast the signing is
+    compared with real life (0.75 for slow motion). Returns (segments, speeds)."""
+    segs, speeds = [], []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.reader(f):
             if not row or row[0].strip().lower() in ("label", "#") or row[0].startswith("#"):
                 continue
             label, start, end = row[0].strip(), parse_time(row[1]), parse_time(row[2])
+            speed = float(row[3]) if len(row) > 3 and row[3].strip() else 1.0
+            if not 0.1 <= speed <= 2:
+                sys.exit(f"{path}: speed for {label} should be between 0.1 and 2 (1 = real speed)")
             segs.append((label, int(round(start * fps)), int(round(end * fps))))
-    return segs
+            speeds.append(speed)
+    return segs, speeds
 
 
 def runs_of(mask, min_len):
@@ -194,23 +203,30 @@ def process(video, args):
     tracker.close()
     backend = tracker.backend
 
+    speeds = None
     if args.label:
         segs = [(args.label, 0, len(feats) - 1)]
     elif args.segments:
-        segs = read_segments_csv(args.segments, fps)
+        segs, speeds = read_segments_csv(args.segments, fps)
     else:
         labels = parse_labels(args.labels)
         segs, err = auto_segments(np.array(thumbs), np.array(card), labels, fps)
         if err:
             sys.exit(err + " Try adjusting --label-box, or write the times in a CSV and use --segments.")
 
+    speeds = speeds or [1.0] * len(segs)
+    slow = any(sp != 1.0 for sp in speeds)
+
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     seg_csv = os.path.join(ROOT, "data", f"{name}_segments.csv")
-    with open(seg_csv, "w", newline="", encoding="utf-8") as f:
-        wr = csv.writer(f)
-        wr.writerow(["label", "start", "end"])
-        for lab, s, e in segs:
-            wr.writerow([lab, f"{s / fps:.2f}", f"{(e + 1) / fps:.2f}"])
+    if args.segments and os.path.abspath(args.segments) == os.path.abspath(seg_csv):
+        seg_csv = None  # don't overwrite the CSV we were given
+    if seg_csv:
+        with open(seg_csv, "w", newline="", encoding="utf-8") as f:
+            wr = csv.writer(f)
+            wr.writerow(["label", "start", "end"] + (["speed"] if slow else []))
+            for (lab, s, e), sp in zip(segs, speeds):
+                wr.writerow([lab, f"{s / fps:.2f}", f"{(e + 1) / fps:.2f}"] + ([f"{sp:g}"] if slow else []))
 
     X, y, seg_id, pos, ts = [], [], [], [], []
     print("\nSign   time          frames used")
@@ -221,7 +237,7 @@ def process(video, args):
         for j in range(a, min(b, len(feats) - 1) + 1):
             if feats[j] is not None:
                 X.append(feats[j]); y.append(lab); seg_id.append(k); pos.append((j - s) / length)
-                ts.append(j / fps)
+                ts.append((s + (j - s) * speeds[k]) / fps)  # slow motion -> real-life time
                 used += 1
         flag = "" if used >= 10 else "   <- few hand frames, check this one"
         shown = "(not a sign)" if lab == NOT_A_SIGN else lab
@@ -233,7 +249,8 @@ def process(video, args):
                         t=np.array(ts, dtype=np.float32),
                         src=np.array(name), backend=np.array(backend))
     print(f"\nSaved {len(X)} examples of {len(segs)} signs -> {os.path.relpath(out, ROOT)}")
-    print(f"Sign times -> {os.path.relpath(seg_csv, ROOT)}")
+    if seg_csv:
+        print(f"Sign times -> {os.path.relpath(seg_csv, ROOT)}")
     if args.preview:
         prev = os.path.join(ROOT, "data", f"{name}_preview.jpg")
         save_preview(video, segs, lms, prev)
