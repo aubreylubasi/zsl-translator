@@ -38,7 +38,10 @@
   .guess .bar i { display: block; height: 100%; width: 0; background: var(--orange); transition: width 0.15s; }
   .guess.sure .bar i { background: var(--good); }
   .guess .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+  .guess .sign.word { font-size: 1.9rem; padding: 0.35rem 0 0.2rem; }
   .flip { position: absolute; right: 0.75rem; top: 0.75rem; }
+  .mode { position: absolute; right: 0.75rem; top: 4rem; min-width: 5.5rem; border-color: var(--orange); color: var(--orange); background: rgba(12, 36, 24, 0.82); }
+  .mode[hidden] { display: none; }
 
   .notice { position: absolute; inset: auto 1rem 1rem; padding: 0.8rem 1rem; border-radius: 12px; background: rgba(12, 36, 24, 0.9); font-size: 0.95rem; line-height: 1.45; }
   .notice[hidden] { display: none; }
@@ -73,6 +76,7 @@
     <div class="hint" id="hint">Show a sign</div>
   </div>
   <button class="flip" id="flip" type="button" aria-label="Switch camera">Flip</button>
+  <button class="mode" id="mode" type="button" hidden>Letters</button>
   <div class="notice" id="notice" hidden></div>
 </main>
 

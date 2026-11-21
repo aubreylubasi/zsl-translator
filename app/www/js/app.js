@@ -21,6 +21,14 @@
   };
   var autoSpeak = false;
   var stats = { frames: 0, start: 0 };
+  // Two models: the alphabet, and word signs from the lesson videos (zsl_words.json).
+  var MODES = {
+    letters: { file: "zsl_model.json", button: "Letters", ready: "letters ready",
+               placeholder: "Letters you hold still for half a second appear here." },
+    words: { file: "zsl_words.json", button: "Words", ready: "words ready",
+             placeholder: "Words you sign appear here." }
+  };
+  var mode = "letters", loaded = {}, modeBtn = $("mode");
   window.__zsl = { stats: stats, get text() { return typist ? typist.text : ""; }, log: [] };
 
   function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = "pill" + (cls ? " " + cls : ""); }
@@ -38,7 +46,7 @@
 
   function renderText() {
     var t = typist ? typist.text : "";
-    if (!t) { textEl.innerHTML = '<span class="placeholder">Letters you hold still for half a second appear here.</span>'; return; }
+    if (!t) { textEl.innerHTML = '<span class="placeholder">' + MODES[mode].placeholder + '</span>'; return; }
     textEl.textContent = t;
     var c = document.createElement("span"); c.className = "caret"; c.innerHTML = "&nbsp;";
     textEl.appendChild(c);
@@ -46,6 +54,7 @@
   }
 
   function renderGuess() {
+    signEl.classList.remove("word");
     if (framing) {
       signEl.textContent = "–"; barEl.style.width = "0"; guessEl.classList.remove("sure");
       hintEl.textContent = FRAMING_HINTS[framing];
@@ -62,6 +71,7 @@
       return;
     }
     signEl.textContent = typist.guess;
+    signEl.classList.toggle("word", typist.guess.length > 2);
     barEl.style.width = Math.round(typist.conf * 100) + "%";
     var sure = typist.conf >= typist.minConf;
     guessEl.classList.toggle("sure", sure && typist.still);
@@ -148,6 +158,28 @@
     step().finally(function () { requestAnimationFrame(loop); });
   }
 
+  async function loadModel(m) {
+    if (!loaded[m]) {
+      var res = await fetch(MODES[m].file);
+      if (!res.ok) throw new Error(MODES[m].file + " is missing");
+      loaded[m] = new ZSL.Model(await res.json());
+    }
+    return loaded[m];
+  }
+
+  /* Switch between the letters and words models. The typed text is kept. */
+  async function useMode(m) {
+    var next = await loadModel(m);
+    var text = typist ? typist.text : "";
+    model = next;
+    win = model.window ? new ZSL.Window(model.window.frames, model.window.seconds) : null;
+    typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0, still: 1.0, freeMove: model.moving });
+    typist.text = text;
+    mode = m;
+    modeBtn.textContent = MODES[m].button;
+    modeBtn.setAttribute("aria-label", "Reading " + MODES[m].button.toLowerCase() + ". Tap to switch.");
+  }
+
   async function init() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setStatus("Not supported", "err");
@@ -155,11 +187,8 @@
       return;
     }
     setStatus("Loading AI…");
-    var res = await fetch("zsl_model.json");
-    var json = await res.json();
-    model = new ZSL.Model(json);
-    if (model.window) win = new ZSL.Window(model.window.frames, model.window.seconds);
-    typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0, still: 1.0, freeMove: model.moving });
+    await useMode("letters");
+    try { await loadModel("words"); modeBtn.hidden = false; } catch (e) { console.warn("No words model", e); }
     meter = new ZSL.MotionMeter(0.2);
 
     hands = new Hands({ locateFile: function (f) { return "mediapipe/hands/" + f; } });
@@ -174,7 +203,7 @@
 
     setStatus("Starting camera…");
     await startCamera();
-    setStatus(model.labels.length + " signs ready", "ready");
+    setStatus(model.labels.length + " " + MODES[mode].ready, "ready");
     stats.start = performance.now();
     renderText();
     loop();
@@ -183,6 +212,13 @@
   $("flip").addEventListener("click", function () {
     facing = facing === "environment" ? "user" : "environment";
     startCamera().catch(function () {});
+  });
+  modeBtn.addEventListener("click", function () {
+    if (!typist) return;
+    useMode(mode === "letters" ? "words" : "letters").then(function () {
+      setStatus(model.labels.length + " " + MODES[mode].ready, "ready");
+      renderText(); renderGuess();
+    }).catch(function (e) { console.error(e); });
   });
   $("speak").addEventListener("click", function () { speak(typist && typist.text); });
   $("space").addEventListener("click", function () { if (typist && typist.text && !/ $/.test(typist.text)) { typist.text += " "; renderText(); } });
