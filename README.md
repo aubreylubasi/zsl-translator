@@ -140,6 +140,34 @@ THANK YOU,0:06.2,0:08.0
 
 Then run `python video_to_dataset.py videos/greetings.mp4 --segments greetings.csv`.
 
+An optional 4th column, `speed`, says how fast the signing is compared with
+real life (`0.75` for slow motion, blank or `1` for normal). The motion model
+uses it so slow-motion signs are learnt at real speed.
+
+### Lesson videos with captions
+
+Some teaching videos write each sign's name in a caption bar, like the "Zambian
+Sign Language Communication" lessons. `caption_segments.py` reads the captions
+and writes the CSV for you (it needs `brew install tesseract ffmpeg`):
+
+```bash
+python caption_segments.py videos/zsl_lesson1_greetings.mp4 --speed 0.75 --skip So,And
+python video_to_dataset.py videos/zsl_lesson1_greetings.mp4 \
+    --segments data/zsl_lesson1_greetings_captions.csv --preview
+```
+
+- Check `data/<name>_captions.jpg` (the caption read for each sign) and the
+  preview. Rows starting with `#` in the CSV are left out: skipped signs,
+  captions it couldn't read (`?`: type the name and remove the `#`), and signs
+  in a damaged part of the video.
+- **Damaged downloads:** a download that didn't finish can have missing or
+  frozen parts, which makes OpenCV stop early or get the times wrong. The script
+  spots this, makes a repaired copy (`videos/<name>_fixed.mp4`) and prints the
+  exact `video_to_dataset.py` command to use. Signs in the damaged parts are
+  lost, so download the video again if you can.
+- These lessons show each sign in slow motion first (about 0.75 of real speed,
+  measured from hand speeds), then at normal speed without captions.
+
 ## 2. Train
 
 ```bash
@@ -229,6 +257,7 @@ This scores the model on a person it has never seen.
 | File | What it does |
 |---|---|
 | `video_to_dataset.py` | Cuts a video into signs and keeps only hand numbers |
+| `caption_segments.py` | Reads the sign names a lesson video shows on screen and writes the times CSV |
 | `collect.py` | Records signs from the webcam (numbers only) |
 | `labels/` | Sign lists from the ZNAD poster: numbers and word signs |
 | `train.py` | Trains the recogniser on everything in `data/` |
@@ -238,6 +267,7 @@ This scores the model on a person it has never seen.
 | `zsl/typist.py` | Still-hand meter and the rules for when a sign gets typed |
 | `zsl/jsonmodel.py` | Lets `live.py` use the phone app's model file |
 | `tests/test_typist.py` | Quick check of the typing rules, and that the phone app matches Python |
+| `tests/test_captions.py` | Quick check of caption reading, damaged-video handling and the speed column |
 | `app/` | The offline Android app (see above) |
 
 ## Limits of this version
@@ -257,6 +287,11 @@ The ZSL alphabet video used for the first experiments is by
 [Signs of Love](https://www.signsoflove.org). The video and the hand data taken
 from it are not in this repository. The demo model (`app/www/zsl_model.json`)
 was trained on it for non-commercial testing only.
+
+The greetings signs come from the video "Zambian Sign Language Communication,
+Lesson 1: Greetings". Only the sign times (`data/zsl_lesson1_greetings_captions.csv`)
+are in this repository, not the video or its hand data. Ask its makers before
+releasing a model trained on it.
 
 Inspired by the Sign Champions' BSL translator (Longitude Explorer Prize 2021),
 rebuilt for Zambia.
