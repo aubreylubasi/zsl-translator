@@ -1,0 +1,6 @@
+# Family signs from the ZNAD poster. * = signed with a movement.
+FAMILY*
+MOTHER*
+FATHER*
+BROTHER*
+SISTER*

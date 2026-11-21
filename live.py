@@ -33,7 +33,7 @@ PHONE_MODEL = os.path.join(ROOT, "app", "www", "zsl_model.json")
 
 
 def load_model(path):
-    """Returns (model, labels, backend). Uses the phone app's model if nothing is trained here yet."""
+    """Returns (model, labels, backend, moving signs). Uses the phone app's model if nothing is trained here yet."""
     if path is None:
         path = DESKTOP_MODEL if os.path.exists(DESKTOP_MODEL) else PHONE_MODEL
         if path == PHONE_MODEL:
@@ -45,11 +45,11 @@ def load_model(path):
         model = JsonModel(path)
         if model.feature_dim != FEATURE_DIM:
             raise SystemExit("Model is from an older version - run train.py again.")
-        return model, model.labels, None
+        return model, model.labels, None, model.moving
     bundle = joblib.load(path)
     if bundle["feature_dim"] != FEATURE_DIM:
         raise SystemExit("Model is from an older version - run train.py again.")
-    return bundle["model"], bundle["labels"], bundle.get("backend")
+    return bundle["model"], bundle["labels"], bundle.get("backend"), bundle.get("moving", [])
 
 
 def speak(text):
@@ -84,7 +84,7 @@ def main():
     ap.add_argument("--backend", default="auto", choices=["auto", "tasks", "legacy"])
     args = ap.parse_args()
 
-    model, labels, trained_with = load_model(args.model)
+    model, labels, trained_with, moving = load_model(args.model)
 
     cap = cv2.VideoCapture(args.video if args.video else args.camera)
     if not cap.isOpened():
@@ -95,7 +95,8 @@ def main():
     if trained_with not in (None, "unknown", tracker.backend):
         print("Note: this model was trained with a different MediaPipe version. If results are "
               "poor, run video_to_dataset.py and train.py again on this computer.")
-    typist = Typist(labels, args.min_conf, args.hold, still=args.still, still_time=args.still_time)
+    typist = Typist(labels, args.min_conf, args.hold, still=args.still, still_time=args.still_time,
+                    free_move=moving)
     meter = MotionMeter()
     t0, last_t, n = time.time(), None, 0
     seen = {"hands": 0, "not_sign": 0, "still": 0}

@@ -22,7 +22,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from zsl.features import FEATURE_DIM, NOT_A_SIGN, mirror
+from zsl.features import FEATURE_DIM, NOT_A_SIGN, mirror, moving_from_label_files
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -84,7 +84,7 @@ def make_model():
         hidden_layer_sizes=(256, 128), alpha=1e-3, max_iter=300, random_state=0))
 
 
-def export_json(model, labels, path):
+def export_json(model, labels, path, moving=()):
     """Save the model as plain numbers for the phone app (app/www)."""
     import json
     scaler, mlp = model.steps[0][1], model.steps[1][1]
@@ -92,6 +92,7 @@ def export_json(model, labels, path):
     data = {
         "labels": [str(s) for s in labels],
         "feature_dim": FEATURE_DIM,
+        "moving": sorted(str(s) for s in moving),
         "mean": r(scaler.mean_), "scale": r(scaler.scale_),
         "activation": mlp.activation,
         "layers": [{"in": int(W.shape[0]), "out": int(W.shape[1]), "W": r(W), "b": r(b)}
@@ -156,12 +157,15 @@ def main():
     Xa, ya = augment(X, y, not args.no_mirror)
     model = make_model().fit(Xa, ya)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    joblib.dump({"model": model, "labels": list(model.classes_), "feature_dim": FEATURE_DIM,
+    moving = sorted(moving_from_label_files(os.path.join(ROOT, "labels")) & set(model.classes_))
+    joblib.dump({"model": model, "labels": list(model.classes_), "feature_dim": FEATURE_DIM, "moving": moving,
                  "sources": sorted(set(src)), "backend": sorted(load.backends)[0]}, args.out)
+    if set(moving) - {"J", "Z"}:
+        print("Signed with a movement (no 'hold still' needed): " + ", ".join(m for m in moving if m not in ("J", "Z")))
     print(f"Saved -> {os.path.relpath(args.out, ROOT)}   Now run: python live.py")
     web = os.path.join(ROOT, "app", "www", "zsl_model.json")
     if os.path.isdir(os.path.join(ROOT, "app", "www")):
-        export_json(model, model.classes_, web)
+        export_json(model, model.classes_, web, moving)
         print(f"Phone app model -> {os.path.relpath(web, ROOT)}")
 
 
