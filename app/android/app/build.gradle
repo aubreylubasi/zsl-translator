@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+// Every GitHub build gets a higher version number, so a new APK installs
+// straight over the old one.
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+
 android {
     namespace 'zm.aubreylubasi.zsl'
     compileSdk 35
@@ -10,8 +14,30 @@ android {
         applicationId 'zm.aubreylubasi.zsl'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '0.1'
+        versionCode 100 + buildNumber
+        versionName "0.2.${buildNumber}"
+    }
+
+    // One fixed key for every build. zsl-test.jks is a public test key kept in
+    // the repo. To use a private key instead, save it as the GitHub secrets
+    // ZSL_KEYSTORE_B64, ZSL_KEYSTORE_PASSWORD, ZSL_KEY_ALIAS, ZSL_KEY_PASSWORD.
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('ZSL_KEYSTORE') ?: 'zsl-test.jks')
+            storePassword System.getenv('ZSL_KEYSTORE_PASSWORD') ?: 'zsl-test-key'
+            keyAlias System.getenv('ZSL_KEY_ALIAS') ?: 'zsl'
+            keyPassword System.getenv('ZSL_KEY_PASSWORD') ?: 'zsl-test-key'
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
     }
 
     compileOptions {

@@ -66,8 +66,12 @@ different". The real model needs ZSL "not a sign" data (step 4b below).
 Download **ZSL-Translator.apk** from the
 [latest test release](../../releases/tag/latest-apk). Open it on your phone and
 allow installs from that source. Point the back camera at the signer, or press
-**Flip** to sign to the front camera yourself. If an older test build is
-installed, uninstall it first.
+**Flip** to sign to the front camera yourself. Every build is signed with the
+same key (`app/android/app/zsl-test.jks`), so a new APK installs straight over
+the last one. Builds from before 21 Nov 2026 used a different key: uninstall
+those once first. The test key is public, so for a real release save a private
+key as the secrets `ZSL_KEYSTORE_B64`, `ZSL_KEYSTORE_PASSWORD`, `ZSL_KEY_ALIAS`
+and `ZSL_KEY_PASSWORD`; the workflow then uses it instead.
 
 - `app/www/`: the app itself (HTML and JavaScript). It uses MediaPipe's hand and
   body tracking and the same model as the desktop version (`zsl_model.json`).
