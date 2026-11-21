@@ -1,0 +1,12 @@
+# Food signs from the ZNAD poster. * = signed with a movement.
+WATER*
+MEAT*
+TEA*
+HUNGRY*
+NSHIMA*
+MILK*
+SATISFIED*
+BEANS*
+CHICKEN*
+RICE*
+MAIZE*

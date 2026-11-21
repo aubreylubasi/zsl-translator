@@ -1,0 +1,21 @@
+# Health signs from the ZNAD poster. * = signed with a movement.
+# Remove the * from any sign you hold still.
+SICK*
+WELL*
+DIARRHOEA*
+TB*
+TOILET*
+MALARIA*
+PAIN*
+HAPPY*
+SAD*
+ANGRY*
+MEDICINE*
+DEATH*
+HIV/AIDS*
+ABSTINENCE*
+HIV TEST*
+HEALTH*
+BLOOD*
+CONDOM*
+LOVE*

@@ -38,7 +38,7 @@
 
   function renderText() {
     var t = typist ? typist.text : "";
-    if (!t) { textEl.innerHTML = '<span class="placeholder">Signs you hold still for half a second appear here.</span>'; return; }
+    if (!t) { textEl.innerHTML = '<span class="placeholder">Letters you hold still for half a second appear here.</span>'; return; }
     textEl.textContent = t;
     var c = document.createElement("span"); c.className = "caret"; c.innerHTML = "&nbsp;";
     textEl.appendChild(c);
@@ -156,7 +156,7 @@
     var res = await fetch("zsl_model.json");
     var json = await res.json();
     model = new ZSL.Model(json);
-    typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0, still: 1.0 });
+    typist = new ZSL.Typist(model.labels, { minConf: 0.6, hold: 0.5, gap: 1.0, still: 1.0, freeMove: model.moving });
     meter = new ZSL.MotionMeter(0.2);
 
     hands = new Hands({ locateFile: function (f) { return "mediapipe/hands/" + f; } });

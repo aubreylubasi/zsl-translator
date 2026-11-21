@@ -175,6 +175,20 @@ python train.py
 - **Space** records the sign shown: a 1-second countdown, then 1.5 seconds of signing.
 - Use codes like P01 and P02, not names, and only record people who have agreed.
 
+## 4a. Add numbers and word signs
+
+`labels/` has ready-made lists from the ZNAD poster "Easy to Use Zambian Sign
+Language": numbers 0 to 10 and 54 word signs (health, questions, family, food,
+work). Record a list, then train:
+
+```bash
+python collect.py --labels labels/health.txt --signer P01 --seconds 2.5
+python train.py
+```
+
+Signs marked `*` in a list are signed with a movement, so the app types them
+without waiting for the hand to stop. See `labels/README.md` for tips.
+
 ## 4b. Teach it what is NOT a sign
 
 This stops it typing junk while someone signs words. Give it examples of hands
@@ -211,6 +225,7 @@ This scores the model on a person it has never seen.
 |---|---|
 | `video_to_dataset.py` | Cuts a video into signs and keeps only hand numbers |
 | `collect.py` | Records signs from the webcam (numbers only) |
+| `labels/` | Sign lists from the ZNAD poster: numbers and word signs |
 | `train.py` | Trains the recogniser on everything in `data/` |
 | `live.py` | Live camera to text and speech |
 | `zsl/tracker.py` | MediaPipe hand and body tracking (works with old and new MediaPipe) |

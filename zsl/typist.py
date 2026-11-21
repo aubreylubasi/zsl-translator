@@ -60,10 +60,11 @@ class Typist:
     """Turns a stream of per-frame guesses into typed text."""
 
     def __init__(self, labels, min_conf=0.6, hold=0.5, gap=1.0, smooth=8, still=1.0, still_time=0.15,
-                 moving_signs=MOVING_SIGNS, moving_factor=3.0):
+                 moving_signs=MOVING_SIGNS, moving_factor=3.0, free_move=()):
         self.labels, self.min_conf, self.hold, self.gap = list(labels), min_conf, hold, gap
         self.still_limit, self.still_time = still, still_time
         self.moving_signs, self.moving_factor = set(moving_signs), moving_factor
+        self.free_move = set(free_move) - {"J", "Z"}  # word signs with a movement: no still rule
         self.buf = deque(maxlen=smooth)
         self.text, self.cand, self.cand_t, self.last, self.no_hand = "", None, 0.0, None, 0.0
         self.still_t = 0.0
@@ -90,7 +91,7 @@ class Typist:
         lab = self.labels[top]
         self.guess, self.conf = lab, float(avg[top])
         limit = self.still_limit * (self.moving_factor if lab in self.moving_signs else 1.0)
-        self.still = self.still_limit <= 0 or (speed is not None and speed <= limit)
+        self.still = self.still_limit <= 0 or lab in self.free_move or (speed is not None and speed <= limit)
         if lab == NOT_A_SIGN or self.conf < self.min_conf:
             self.cand = None
             return None

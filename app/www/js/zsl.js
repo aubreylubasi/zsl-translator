@@ -76,6 +76,7 @@
 
   /* Small neural network exported from scikit-learn by train.py */
   function Model(json) {
+    this.moving = json.moving || [];
     if (json.feature_dim !== FEATURE_DIM) throw new Error("Model was made for a different app version");
     this.labels = json.labels;
     this.mean = Float64Array.from(json.mean);
@@ -150,6 +151,8 @@
     this.stillTime = opts.stillTime != null ? opts.stillTime : 0.15;
     this.movingSigns = opts.movingSigns || MOVING_SIGNS;
     this.movingFactor = opts.movingFactor != null ? opts.movingFactor : 3.0;
+    // word signs with a movement (from the model's "moving" list): no still rule
+    this.freeMove = (opts.freeMove || []).filter(function (l) { return l !== "J" && l !== "Z"; });
     this.buf = [];
     this.text = ""; this.cand = null; this.candT = 0; this.last = null; this.noHand = 0;
     this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
@@ -178,7 +181,7 @@
     var lab = this.labels[top];
     this.guess = lab; this.conf = avg[top];
     var limit = this.stillLimit * (this.movingSigns.indexOf(lab) >= 0 ? this.movingFactor : 1);
-    this.still = this.stillLimit <= 0 || (speed != null && speed <= limit);
+    this.still = this.stillLimit <= 0 || this.freeMove.indexOf(lab) >= 0 || (speed != null && speed <= limit);
     if (lab === NOT_A_SIGN || this.conf < this.minConf) { this.cand = null; return null; }
     if (top !== this.cand) {
       this.cand = top; this.candT = 0; this.stillT = 0;

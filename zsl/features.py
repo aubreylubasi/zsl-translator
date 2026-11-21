@@ -60,18 +60,38 @@ def mirror(X):
     return X.reshape(-1, FEATURE_DIM)
 
 
-def parse_labels(text):
-    """'A-Z' -> ['A'..'Z'];  'A-Z,_' -> ['A'..'Z','_'];  'HELLO,THANK YOU' -> ['HELLO','THANK YOU'];
-    path to a .txt -> one per line.  '_' means "not a sign"."""
+def _label_parts(text):
+    """Raw entries from 'A-Z,HELLO' or a .txt file (one per line, '#' lines are notes)."""
     import os
     if os.path.isfile(text):
         with open(text, encoding="utf-8") as f:
-            return [ln.strip() for ln in f if ln.strip()]
+            return [ln.strip() for ln in f if ln.strip() and not ln.strip().startswith("#")]
+    return [t.strip() for t in text.split(",")]
+
+
+def parse_labels(text):
+    """'A-Z' -> ['A'..'Z'];  'A-Z,_' -> ['A'..'Z','_'];  'HELLO,THANK YOU' -> ['HELLO','THANK YOU'];
+    path to a .txt -> one per line.  '_' means "not a sign".  A trailing '*' (a moving sign) is dropped."""
     out = []
-    for part in (t.strip() for t in text.split(",")):
+    for part in (p.rstrip("*").strip() for p in _label_parts(text)):
         m = re.fullmatch(r"([A-Za-z0-9])\s*-\s*([A-Za-z0-9])", part)
         if m:
             out += [chr(c) for c in range(ord(m.group(1)), ord(m.group(2)) + 1)]
         elif part:
             out.append(part)
+    return out
+
+
+def moving_labels(text):
+    """Signs marked with a trailing '*' (signed with a movement)."""
+    return [p.rstrip("*").strip() for p in _label_parts(text) if p.endswith("*")]
+
+
+def moving_from_label_files(folder):
+    """Every '*' sign in labels/*.txt, plus J and Z."""
+    import glob
+    import os
+    out = {"J", "Z"}
+    for path in sorted(glob.glob(os.path.join(folder, "*.txt"))):
+        out.update(moving_labels(path))
     return out
