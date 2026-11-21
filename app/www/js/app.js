@@ -13,7 +13,12 @@
 
   var facing = "environment", stream = null;
   var model = null, typist = null, meter = null, hands = null, pose = null;
-  var lastHands = [], lastPose = null, frame = 0, lastT = null, busy = false;
+  var lastHands = [], lastPose = null, frame = 0, lastT = null, busy = false, framing = null;
+  var FRAMING_HINTS = {
+    "no-body": "Step back – show your head and shoulders",
+    "fake-body": "Step back – show your head and shoulders",
+    "too-close": "Too close – move the hand away from the camera"
+  };
   var autoSpeak = false;
   var stats = { frames: 0, start: 0 };
   window.__zsl = { stats: stats, get text() { return typist ? typist.text : ""; }, log: [] };
@@ -41,6 +46,11 @@
   }
 
   function renderGuess() {
+    if (framing) {
+      signEl.textContent = "–"; barEl.style.width = "0"; guessEl.classList.remove("sure");
+      hintEl.textContent = FRAMING_HINTS[framing];
+      return;
+    }
     if (!typist || !typist.guess) {
       signEl.textContent = "–"; barEl.style.width = "0"; guessEl.classList.remove("sure");
       hintEl.textContent = lastHands.length ? "Hold still…" : "Show a sign";
@@ -94,7 +104,7 @@
     video.srcObject = stream;
     await video.play();
     stage.classList.toggle("mirror", facing === "user");
-    lastHands = []; lastPose = null;
+    lastHands = []; lastPose = null; framing = null;
   }
 
   async function step() {
@@ -110,10 +120,16 @@
       var now = performance.now() / 1000;
       var dt = lastT == null ? 0 : Math.min(now - lastT, 0.5);
       lastT = now;
-      var feats = ZSL.frameFeatures(lastHands, lastPose, video.videoWidth / video.videoHeight);
-      var proba = feats ? model.predict(feats) : null;
-      var speed = meter.update(lastHands, video.videoWidth / video.videoHeight, now);
-      var ev = typist.update(proba, dt, speed);
+      var aspect = video.videoWidth / video.videoHeight;
+      var speed = meter.update(lastHands, aspect, now);
+      framing = ZSL.framingIssue(lastHands, lastPose, aspect);
+      var ev = null;
+      if (framing) {
+        typist.pause(); // can't trust a guess without real shoulders: don't type anything
+      } else {
+        var feats = ZSL.frameFeatures(lastHands, lastPose, aspect);
+        ev = typist.update(feats ? model.predict(feats) : null, dt, speed);
+      }
       if (ev === "sign") { renderText(); window.__zsl.log.push(typist.text.trim().slice(-1) + "@" + (video.currentTime || now).toFixed(1)); }
       if (ev === "word") { renderText(); if (autoSpeak) speak(typist.text.trim().split(" ").pop()); }
       renderGuess();

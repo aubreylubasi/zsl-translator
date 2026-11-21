@@ -42,6 +42,38 @@
     return out;
   }
 
+  /* Can we trust the body position? The model measures the hand against the
+   * shoulders, so without real shoulders every guess is unreliable.
+   * Returns null when the framing is fine, otherwise a short reason:
+   *   "no-body"   no person found, or shoulders hidden or outside the picture
+   *   "fake-body" the "shoulders" sit on the hand (the tracker mistook the hand for a body)
+   *   "too-close" the hand is huge next to the shoulders (hand right up at the camera) */
+  var MIN_VIS = 0.5, MAX_PALM_RATIO = 0.7;  // training data: 0.32 ± 0.06
+  function framingIssue(hands, pose, aspect) {
+    if (!hands || hands.length === 0) return null;
+    if (!pose || !pose[11] || !pose[12]) return "no-body";
+    var sh = [pose[11], pose[12]];
+    for (var i = 0; i < 2; i++) {
+      var p = sh[i];
+      if (p.visibility != null && p.visibility < MIN_VIS) return "no-body";
+      if (p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return "no-body";
+    }
+    var width = Math.max(Math.hypot((sh[0].x - sh[1].x) * aspect, sh[0].y - sh[1].y), 1e-3);
+    for (var k = 0; k < hands.length; k++) {
+      var h = hands[k], x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+      for (var j = 0; j < 21; j++) {
+        x0 = Math.min(x0, h[j].x); x1 = Math.max(x1, h[j].x);
+        y0 = Math.min(y0, h[j].y); y1 = Math.max(y1, h[j].y);
+      }
+      for (i = 0; i < 2; i++) {
+        if (sh[i].x > x0 && sh[i].x < x1 && sh[i].y > y0 && sh[i].y < y1) return "fake-body";
+      }
+      var palm = Math.hypot((h[9].x - h[0].x) * aspect, h[9].y - h[0].y);
+      if (palm / width > MAX_PALM_RATIO) return "too-close";
+    }
+    return null;
+  }
+
   /* Small neural network exported from scikit-learn by train.py */
   function Model(json) {
     if (json.feature_dim !== FEATURE_DIM) throw new Error("Model was made for a different app version");
@@ -122,6 +154,10 @@
     this.text = ""; this.cand = null; this.candT = 0; this.last = null; this.noHand = 0;
     this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
   }
+  /* Forget the current guess without ending the word (used while the framing is bad). */
+  Typist.prototype.pause = function () {
+    this.buf = []; this.cand = null; this.guess = null; this.conf = 0; this.still = false; this.stillT = 0;
+  };
   /* speed: MotionMeter speed, or null if unknown */
   Typist.prototype.update = function (proba, dt, speed) {
     if (!proba) {
@@ -160,7 +196,7 @@
     return null;
   };
 
-  var api = { frameFeatures: frameFeatures, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
+  var api = { frameFeatures: frameFeatures, framingIssue: framingIssue, Model: Model, MotionMeter: MotionMeter, Typist: Typist,
     FEATURE_DIM: FEATURE_DIM, NOT_A_SIGN: NOT_A_SIGN };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ZSL = api;
