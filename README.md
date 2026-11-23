@@ -315,3 +315,7 @@ rebuilt for Zambia.
 - **Certificate error when downloading models:** run `pip install --upgrade certifi`.
 - **Warning about a different MediaPipe version:** run steps 1 and 2 again on
   this computer.
+
+## Privacy and terms
+
+The app uses the camera only to follow hand positions on the phone. It never saves or sends video, has no internet permission, and has no accounts or analytics. Full policy: [aubreylubasi.dev/privacy.html](https://aubreylubasi.dev/privacy.html#zsl-translator). Terms: [aubreylubasi.dev/terms.html](https://aubreylubasi.dev/terms.html).
